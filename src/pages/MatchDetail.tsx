@@ -1,20 +1,21 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ExternalLink, TrendingUp } from "lucide-react";
+import { ArrowLeft, ExternalLink, TrendingUp, Lock } from "lucide-react";
 import { useData } from "../context/DataContext";
+import { useUserAuth } from "../context/UserAuthContext";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
-import { computeOdds, getVoterId } from "../utils/odds";
+import { computeOdds } from "../utils/odds";
 
 export default function MatchDetail() {
   const { id } = useParams();
   const { teams, players, matches, votes, castVote } = useData();
+  const { user, setAuthModalOpen, setAuthMode } = useUserAuth();
   const [voting, setVoting] = useState(false);
 
   const match = matches.find((m) => m.id === id);
-  const voterId = useMemo(() => getVoterId(), []);
-  const myVote = votes.find((v) => v.match_id === id && v.voter_id === voterId);
+  const myVote = user ? votes.find((v) => v.match_id === id && v.voter_id === user.id) : null;
 
   if (!match) {
     return (
@@ -39,9 +40,14 @@ export default function MatchDetail() {
 
   async function handleVote(teamId: string | null) {
     if (!teamId || voting || votingLocked) return;
+    if (!user) {
+      setAuthMode("signin");
+      setAuthModalOpen(true);
+      return;
+    }
     setVoting(true);
     try {
-      await castVote(match!.id, teamId, voterId);
+      await castVote(match!.id, teamId, user.id);
     } finally {
       setVoting(false);
     }
@@ -107,10 +113,23 @@ export default function MatchDetail() {
       {/* VOTING / ODDS */}
       {teamA && teamB && (
         <div className="mt-12 rounded-2xl border border-white/8 bg-white/[0.02] p-6 sm:p-8">
-          <div className="mb-6 flex items-center gap-2">
-            <TrendingUp size={18} className="text-fuchsia-400" />
-            <h2 className="font-display text-xl font-bold text-white">Прогнозы зрителей</h2>
-            {votingLocked && <span className="text-xs text-zinc-500">— голосование завершено</span>}
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={18} className="text-fuchsia-400" />
+              <h2 className="font-display text-xl font-bold text-white">Прогнозы зрителей</h2>
+              {votingLocked && <span className="text-xs text-zinc-500">— голосование завершено</span>}
+            </div>
+            {!user && (
+              <button
+                onClick={() => {
+                  setAuthMode("signin");
+                  setAuthModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-fuchsia-400 hover:text-fuchsia-300"
+              >
+                <Lock size={13} /> Войдите, чтобы проголосовать
+              </button>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -134,8 +153,7 @@ export default function MatchDetail() {
             />
           </div>
           <p className="mt-4 text-center text-xs text-zinc-600">
-            Всего голосов: {votesA + votesB}. Коэффициенты формируются на основе голосов сообщества и не являются
-            реальными ставками.
+            Всего голосов: {votesA + votesB}. Для защиты от накрутки голосование доступно авторизованным пользователям.
           </p>
         </div>
       )}
@@ -219,7 +237,7 @@ function VoteOption({
         </div>
         <span className="font-display text-2xl font-bold text-white">{odds.toFixed(2)}</span>
       </div>
-      {selected && <p className="relative mt-3 text-xs font-medium text-fuchsia-400">✓ Ваш голос</p>}
+      {selected && <p className="relative mt-3 text-xs font-medium text-fuchsia-400">✓ Ваш голос учтён</p>}
     </button>
   );
 }

@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { DataProvider } from "./context/DataContext";
 import { AuthProvider } from "./context/AuthContext";
+import { UserAuthProvider } from "./context/UserAuthContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Home from "./pages/Home";
@@ -25,28 +26,30 @@ function SiteLayout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <AuthProvider>
-      <DataProvider>
-        <HashRouter>
-          <Routes>
-            <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
-            <Route path="/teams" element={<SiteLayout><Teams /></SiteLayout>} />
-            <Route path="/teams/:id" element={<SiteLayout><TeamDetail /></SiteLayout>} />
-            <Route path="/bracket" element={<SiteLayout><Bracket /></SiteLayout>} />
-            <Route path="/matches" element={<SiteLayout><Matches /></SiteLayout>} />
-            <Route path="/matches/:id" element={<SiteLayout><MatchDetail /></SiteLayout>} />
-            <Route path="/leaderboard" element={<SiteLayout><Leaderboard /></SiteLayout>} />
-            <Route
-              path="/nb-admin-9991"
-              element={
-                <div className="min-h-screen bg-[#0d0d0d] text-white antialiased">
-                  <AdminPage />
-                </div>
-              }
-            />
-            <Route path="*" element={<SiteLayout><Home /></SiteLayout>} />
-          </Routes>
-        </HashRouter>
-      </DataProvider>
+      <UserAuthProvider>
+        <DataProvider>
+          <HashRouter>
+            <Routes>
+              <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
+              <Route path="/teams" element={<SiteLayout><Teams /></SiteLayout>} />
+              <Route path="/teams/:id" element={<SiteLayout><TeamDetail /></SiteLayout>} />
+              <Route path="/bracket" element={<SiteLayout><Bracket /></SiteLayout>} />
+              <Route path="/matches" element={<SiteLayout><Matches /></SiteLayout>} />
+              <Route path="/matches/:id" element={<SiteLayout><MatchDetail /></SiteLayout>} />
+              <Route path="/leaderboard" element={<SiteLayout><Leaderboard /></SiteLayout>} />
+              <Route
+                path="/nb-admin-9991"
+                element={
+                  <div className="min-h-screen bg-[#0d0d0d] text-white antialiased">
+                    <AdminPage />
+                  </div>
+                }
+              />
+              <Route path="*" element={<SiteLayout><Home /></SiteLayout>} />
+            </Routes>
+          </HashRouter>
+        </DataProvider>
+      </UserAuthProvider>
     </AuthProvider>
   );
 }

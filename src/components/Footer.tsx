@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ChevronDown, FileText } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../context/DataContext";
 
@@ -52,28 +52,8 @@ export default function Footer() {
             })}
         </div>
 
-        <div className="mt-10 flex flex-col items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-brand">
-              <FileText size={18} className="text-white" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-white">Официальный регламент турнира</p>
-              <p className="text-xs text-zinc-500">NJDC 2026 regulations.pdf</p>
-            </div>
-          </div>
-          <a
-            href={encodeURI(settings.regulations_url)}
-            target="_blank"
-            rel="noreferrer"
-            className="w-full rounded-lg border border-white/15 px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:border-transparent hover:bg-gradient-brand sm:w-auto"
-          >
-            Открыть регламент (PDF)
-          </a>
-        </div>
-
         {/* SPONSORS MINI BAR */}
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/5 bg-white/[0.01] px-5 py-3.5">
+        <div className="mt-12 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/5 bg-white/[0.01] px-5 py-3.5">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
@@ -91,10 +71,20 @@ export default function Footer() {
         </div>
 
         <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-white/5 pt-8 text-center sm:flex-row sm:text-left">
-          <p className="select-none text-xs text-zinc-600" onClick={handleYearClick}>
-            © 2026 NJDC — Nodben Joski Duo Cup. Сервер «{settings.server_name}» · CS2 на CYBERSHOKE.
-          </p>
-          <p className="text-xs text-zinc-600">Неофициальный турнир сообщества. Не связан с Valve.</p>
+          <div className="flex flex-col sm:flex-row items-center sm:items-center gap-3 text-xs text-zinc-500">
+            <p className="select-none" onClick={handleYearClick}>
+              © 2026 NJDC — Nodben Joski Duo Cup. Сервер «{settings.server_name}».
+            </p>
+            <a
+              href={encodeURI(settings.regulations_url)}
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-fuchsia-400 hover:text-fuchsia-300 underline underline-offset-4 transition-colors"
+            >
+              Регламент
+            </a>
+          </div>
+          <p className="text-xs text-zinc-600">Неофициальный турнир сообщества. CS2 на CYBERSHOKE.</p>
         </div>
       </div>
     </footer>
