@@ -131,7 +131,7 @@ export default function Sponsors() {
           {/* CTA Button */}
           <div className="mt-8 flex items-center justify-between pt-4 border-t border-cyan-500/20">
             <div className="text-xs font-bold text-cyan-300">
-              Промокод: <span className="font-mono text-white underline decoration-cyan-400">NJDC2026</span>
+              Промокод: <span className="font-mono text-white underline decoration-cyan-400">NJDC-BONUS-2026</span>
             </div>
             <button
               onClick={() => setActiveModal("1dony")}
