@@ -1,0 +1,225 @@
+import { useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, ExternalLink, TrendingUp } from "lucide-react";
+import { useData } from "../context/DataContext";
+import TeamLogo from "../components/TeamLogo";
+import StatusBadge from "../components/StatusBadge";
+import { STAGE_LABELS } from "../utils/scoring";
+import { computeOdds, getVoterId } from "../utils/odds";
+
+export default function MatchDetail() {
+  const { id } = useParams();
+  const { teams, players, matches, votes, castVote } = useData();
+  const [voting, setVoting] = useState(false);
+
+  const match = matches.find((m) => m.id === id);
+  const voterId = useMemo(() => getVoterId(), []);
+  const myVote = votes.find((v) => v.match_id === id && v.voter_id === voterId);
+
+  if (!match) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-24 text-center">
+        <p className="text-zinc-400">Матч не найден.</p>
+        <Link to="/matches" className="mt-4 inline-block text-fuchsia-400">
+          ← Ко всем матчам
+        </Link>
+      </div>
+    );
+  }
+
+  const teamA = teams.find((t) => t.id === match.team_a);
+  const teamB = teams.find((t) => t.id === match.team_b);
+  const rosterA = players.filter((p) => p.team_id === match.team_a);
+  const rosterB = players.filter((p) => p.team_id === match.team_b);
+
+  const votesA = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_a).length;
+  const votesB = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_b).length;
+  const odds = computeOdds(votesA, votesB);
+  const votingLocked = match.status === "finished";
+
+  async function handleVote(teamId: string | null) {
+    if (!teamId || voting || votingLocked) return;
+    setVoting(true);
+    try {
+      await castVote(match!.id, teamId, voterId);
+    } finally {
+      setVoting(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
+      <Link to="/matches" className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white">
+        <ArrowLeft size={16} /> Ко всем матчам
+      </Link>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-lg">{STAGE_LABELS[match.stage]?.emoji}</span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              {STAGE_LABELS[match.stage]?.name} · {match.format.toUpperCase()}
+            </p>
+            <h1 className="font-display text-2xl font-bold text-white sm:text-3xl">{match.title}</h1>
+            {match.note && <p className="text-sm text-zinc-500">{match.note}</p>}
+          </div>
+        </div>
+        <StatusBadge status={match.status} />
+      </div>
+
+      {/* SCORE */}
+      <div className="mt-10 grid grid-cols-3 items-center gap-4 rounded-2xl border border-white/8 bg-white/[0.02] p-8">
+        <Link to={`/teams/${teamA?.id}`} className="flex flex-col items-center gap-3 text-center">
+          <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={80} />
+          <span className="font-display text-lg font-bold text-white">{teamA?.name ?? "TBD"}</span>
+          <span className="text-xs text-zinc-500">{teamA?.players_label}</span>
+        </Link>
+        <div className="text-center">
+          <p className="font-display text-5xl font-bold text-white sm:text-6xl">
+            {match.status === "upcoming" ? "VS" : `${match.score_a} : ${match.score_b}`}
+          </p>
+          {match.scheduled_at && <p className="mt-2 text-xs text-zinc-500">{match.scheduled_at}</p>}
+        </div>
+        <Link to={`/teams/${teamB?.id}`} className="flex flex-col items-center gap-3 text-center">
+          <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={80} />
+          <span className="font-display text-lg font-bold text-white">{teamB?.name ?? "TBD"}</span>
+          <span className="text-xs text-zinc-500">{teamB?.players_label}</span>
+        </Link>
+      </div>
+
+      {match.cybershoke_url && (
+        <a
+          href={match.cybershoke_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-white/15 py-3 text-sm font-semibold text-white transition-colors hover:border-transparent hover:bg-gradient-brand"
+        >
+          Открыть матч на CYBERSHOKE <ExternalLink size={16} />
+        </a>
+      )}
+
+      {/* ROSTERS */}
+      <div className="mt-12 grid gap-6 md:grid-cols-2">
+        <RosterTable teamName={teamA?.name ?? "TBD"} roster={rosterA} />
+        <RosterTable teamName={teamB?.name ?? "TBD"} roster={rosterB} />
+      </div>
+
+      {/* VOTING / ODDS */}
+      {teamA && teamB && (
+        <div className="mt-12 rounded-2xl border border-white/8 bg-white/[0.02] p-6 sm:p-8">
+          <div className="mb-6 flex items-center gap-2">
+            <TrendingUp size={18} className="text-fuchsia-400" />
+            <h2 className="font-display text-xl font-bold text-white">Прогнозы зрителей</h2>
+            {votingLocked && <span className="text-xs text-zinc-500">— голосование завершено</span>}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <VoteOption
+              team={teamA}
+              odds={odds.oddsA}
+              pct={odds.pctA}
+              votes={votesA}
+              selected={myVote?.team_choice === teamA.id}
+              disabled={voting || votingLocked}
+              onVote={() => handleVote(teamA.id)}
+            />
+            <VoteOption
+              team={teamB}
+              odds={odds.oddsB}
+              pct={odds.pctB}
+              votes={votesB}
+              selected={myVote?.team_choice === teamB.id}
+              disabled={voting || votingLocked}
+              onVote={() => handleVote(teamB.id)}
+            />
+          </div>
+          <p className="mt-4 text-center text-xs text-zinc-600">
+            Всего голосов: {votesA + votesB}. Коэффициенты формируются на основе голосов сообщества и не являются
+            реальными ставками.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RosterTable({ teamName, roster }: { teamName: string; roster: { id: string; nickname: string; kd: number; faceit_elo: number; rating: number }[] }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/8">
+      <div className="bg-white/5 px-4 py-3">
+        <h3 className="font-display font-bold text-white">{teamName}</h3>
+      </div>
+      <table className="w-full text-left text-sm">
+        <thead className="text-xs uppercase tracking-wider text-zinc-600">
+          <tr>
+            <th className="px-4 py-2">Игрок</th>
+            <th className="px-4 py-2">K/D</th>
+            <th className="px-4 py-2">Elo</th>
+            <th className="px-4 py-2">Рейтинг</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {roster.map((p) => (
+            <tr key={p.id} className="text-zinc-300">
+              <td className="px-4 py-2.5 font-medium text-white">{p.nickname}</td>
+              <td className="px-4 py-2.5">{p.kd.toFixed(2)}</td>
+              <td className="px-4 py-2.5">{p.faceit_elo}</td>
+              <td className="px-4 py-2.5 text-fuchsia-400">{p.rating}</td>
+            </tr>
+          ))}
+          {roster.length === 0 && (
+            <tr>
+              <td colSpan={4} className="px-4 py-3 text-zinc-600">
+                Состав уточняется
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function VoteOption({
+  team,
+  odds,
+  pct,
+  votes,
+  selected,
+  disabled,
+  onVote,
+}: {
+  team: { id: string; name: string; logo_url: string };
+  odds: number;
+  pct: number;
+  votes: number;
+  selected: boolean;
+  disabled: boolean;
+  onVote: () => void;
+}) {
+  return (
+    <button
+      onClick={onVote}
+      disabled={disabled}
+      className={`relative overflow-hidden rounded-xl border p-5 text-left transition-colors ${
+        selected ? "border-fuchsia-500 bg-fuchsia-500/10" : "border-white/10 bg-white/[0.02] hover:border-white/30"
+      } ${disabled && !selected ? "cursor-default opacity-70" : ""}`}
+    >
+      <div
+        className="absolute inset-y-0 left-0 bg-gradient-brand/10"
+        style={{ width: `${pct}%`, background: "linear-gradient(90deg, rgba(124,58,237,0.12), rgba(220,38,38,0.12))" }}
+      />
+      <div className="relative flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <TeamLogo src={team.logo_url} alt={team.name} size={40} />
+          <div>
+            <p className="font-semibold text-white">{team.name}</p>
+            <p className="text-xs text-zinc-500">{votes} голосов · {pct}%</p>
+          </div>
+        </div>
+        <span className="font-display text-2xl font-bold text-white">{odds.toFixed(2)}</span>
+      </div>
+      {selected && <p className="relative mt-3 text-xs font-medium text-fuchsia-400">✓ Ваш голос</p>}
+    </button>
+  );
+}
