@@ -4,6 +4,7 @@ import { useData } from "../context/DataContext";
 import { STAGE_LABELS } from "../utils/scoring";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
+import Sponsors from "../components/Sponsors";
 
 const STAGE_DESCRIPTIONS: Record<number, string> = {
   1: "Все команды стартуют с нуля. Пары определяет случайная жеребьёвка — 3 матча Bo1, три победителя получают по 3 очка.",
@@ -151,6 +152,9 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      {/* SPONSORS */}
+      <Sponsors />
 
       {/* PRIZE POOL */}
       <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8">

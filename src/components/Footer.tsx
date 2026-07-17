@@ -72,6 +72,24 @@ export default function Footer() {
           </a>
         </div>
 
+        {/* SPONSORS MINI BAR */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/5 bg-white/[0.01] px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Официальные партнёры турнира:
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="font-display italic font-black uppercase tracking-wider text-white text-sm bg-[#E10600] px-3 py-0.5 rounded shadow-sm">
+              NOD<span className="text-yellow-300">BET</span>
+            </span>
+            <span className="font-display italic font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-sky-400 text-sm bg-slate-900 border border-cyan-500/30 px-3 py-0.5 rounded shadow-sm">
+              1DONY
+            </span>
+          </div>
+        </div>
+
         <div className="mt-14 flex flex-col items-center justify-between gap-4 border-t border-white/5 pt-8 text-center sm:flex-row sm:text-left">
           <p className="select-none text-xs text-zinc-600" onClick={handleYearClick}>
             © 2026 NJDC — Nodben Joski Duo Cup. Сервер «{settings.server_name}» · CS2 на CYBERSHOKE.
