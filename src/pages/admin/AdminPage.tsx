@@ -35,7 +35,17 @@ export default function AdminPage() {
           </span>
           <div>
             <h1 className="font-display text-2xl font-bold text-white">Админ-панель NJDC 2026</h1>
-            <p className="text-xs text-zinc-500">Вошли как maronn · изменения видны сразу всем посетителям</p>
+            <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+              Вошли как maronn ·
+              {connected ? (
+                <>
+                  <span className="inline-block h-2 w-2 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]"></span>
+                  <span className="text-green-400">realtime активен — изменения видны сразу</span>
+                </>
+              ) : (
+                "изменения сохраняются локально"
+              )}
+            </p>
           </div>
         </div>
         <button onClick={logout} className="flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 text-sm text-zinc-300 hover:border-white/40">

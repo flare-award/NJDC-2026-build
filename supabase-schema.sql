@@ -120,6 +120,24 @@ create policy "admin delete votes" on votes for delete
   using (auth.role() = 'authenticated');
 
 -- =========================================================
+-- REALTIME — включаем для всех таблиц, чтобы сайт получал
+-- обновления мгновенно без перезагрузки страницы.
+-- Без этого блока Supabase не будет отправлять события
+-- postgres_changes подписчикам.
+-- =========================================================
+
+-- Создаём publication для realtime (если ещё не создана)
+create publication if not exists supabase_realtime;
+
+-- Добавляем таблицы в publication
+alter publication supabase_realtime add table teams;
+alter publication supabase_realtime add table players;
+alter publication supabase_realtime add table matches;
+alter publication supabase_realtime add table votes;
+alter publication supabase_realtime add table faq;
+alter publication supabase_realtime add table settings;
+
+-- =========================================================
 -- НАЧАЛЬНЫЕ ДАННЫЕ (аналог seed.ts на сайте)
 -- =========================================================
 

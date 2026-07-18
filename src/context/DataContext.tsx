@@ -134,14 +134,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const client = supabase;
     const channel = client
       .channel("njdc-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, () => loadFromSupabase())
-      .on("postgres_changes", { event: "*", schema: "public", table: "players" }, () => loadFromSupabase())
-      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, () => loadFromSupabase())
-      .on("postgres_changes", { event: "*", schema: "public", table: "faq" }, () => loadFromSupabase())
-      .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, () => loadFromSupabase())
-      .on("postgres_changes", { event: "*", schema: "public", table: "votes" }, () => loadFromSupabase())
-      .subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, () => {
+        console.log("[Realtime] teams changed");
+        loadFromSupabase();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "players" }, () => {
+        console.log("[Realtime] players changed");
+        loadFromSupabase();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, () => {
+        console.log("[Realtime] matches changed");
+        loadFromSupabase();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "faq" }, () => {
+        console.log("[Realtime] faq changed");
+        loadFromSupabase();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, () => {
+        console.log("[Realtime] settings changed");
+        loadFromSupabase();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "votes" }, () => {
+        console.log("[Realtime] votes changed");
+        loadFromSupabase();
+      })
+      .subscribe((status) => {
+        console.log("[Realtime] subscription status:", status);
+      });
     return () => {
+      console.log("[Realtime] unsubscribing");
       client.removeChannel(channel);
     };
   }, [loadFromSupabase]);
