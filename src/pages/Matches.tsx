@@ -14,7 +14,7 @@ const FILTERS: { key: MatchStatus | "all"; label: string }[] = [
 ];
 
 export default function Matches() {
-  const { teams, matches } = useData();
+  const { teams, matches, isSupabaseConfigured } = useData();
   const [filter, setFilter] = useState<MatchStatus | "all">("all");
 
   const filtered = matches
@@ -28,9 +28,17 @@ export default function Matches() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8">
-      <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">
-        Матчи <span className="text-gradient">турнира</span>
-      </h1>
+      <div className="flex items-center gap-3">
+        <h1 className="font-display text-4xl font-bold text-white sm:text-5xl">
+          Матчи <span className="text-gradient">турнира</span>
+        </h1>
+        {isSupabaseConfigured && (
+          <span className="flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-green-400">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-400"></span>
+            LIVE
+          </span>
+        )}
+      </div>
       <p className="mt-3 max-w-2xl text-zinc-500">Расписание, счёт и ссылки на CYBERSHOKE для всех игр NJDC 2026.</p>
 
       <div className="mt-8 flex flex-wrap gap-2">

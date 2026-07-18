@@ -10,7 +10,7 @@ import { computeOdds } from "../utils/odds";
 
 export default function MatchDetail() {
   const { id } = useParams();
-  const { teams, players, matches, votes, castVote } = useData();
+  const { teams, players, matches, votes, castVote, isSupabaseConfigured } = useData();
   const { user, setAuthModalOpen, setAuthMode } = useUserAuth();
   const [voting, setVoting] = useState(false);
 
@@ -70,7 +70,15 @@ export default function MatchDetail() {
             {match.note && <p className="text-sm text-zinc-500">{match.note}</p>}
           </div>
         </div>
-        <StatusBadge status={match.status} />
+        <div className="flex items-center gap-2">
+          {isSupabaseConfigured && match.status === "live" && (
+            <span className="flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-green-400">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-400"></span>
+              LIVE
+            </span>
+          )}
+          <StatusBadge status={match.status} />
+        </div>
       </div>
 
       {/* SCORE */}
