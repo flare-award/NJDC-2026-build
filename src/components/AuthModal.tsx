@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Mail, Lock, User, AlertCircle } from "lucide-react";
+import { X, Mail, Lock, AlertCircle } from "lucide-react";
 import { useUserAuth } from "../context/UserAuthContext";
 
 export default function AuthModal() {

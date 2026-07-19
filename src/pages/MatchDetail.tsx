@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ExternalLink, TrendingUp, Lock } from "lucide-react";
+import { ArrowLeft, ExternalLink, TrendingUp, Lock, ShieldCheck, Sparkles } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { useUserAuth } from "../context/UserAuthContext";
+import { useNodbet } from "../context/NodbetContext";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
@@ -12,7 +13,9 @@ export default function MatchDetail() {
   const { id } = useParams();
   const { teams, players, matches, votes, castVote, isSupabaseConfigured } = useData();
   const { user, setAuthModalOpen, setAuthMode } = useUserAuth();
+  const { hasVipBoost, hasRadar, hasGoldBadge, buyPerk, placeBet, balance } = useNodbet();
   const [voting, setVoting] = useState(false);
+  const [fastBetToast, setFastBetToast] = useState<string | null>(null);
 
   const match = matches.find((m) => m.id === id);
   const myVote = user ? votes.find((v) => v.match_id === id && v.voter_id === user.id) : null;
@@ -33,8 +36,11 @@ export default function MatchDetail() {
   const rosterA = players.filter((p) => p.team_id === match.team_a);
   const rosterB = players.filter((p) => p.team_id === match.team_b);
 
-  const votesA = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_a).length;
-  const votesB = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_b).length;
+  // Consider VIP boost x3 from NODBET if current user voted with VIP status!
+  const rawVotesA = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_a).length;
+  const rawVotesB = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_b).length;
+  const votesA = rawVotesA + (myVote?.team_choice === match.team_a && hasVipBoost ? 2 : 0);
+  const votesB = rawVotesB + (myVote?.team_choice === match.team_b && hasVipBoost ? 2 : 0);
   const odds = computeOdds(votesA, votesB);
   const votingLocked = match.status === "finished";
 
@@ -50,6 +56,17 @@ export default function MatchDetail() {
       await castVote(match!.id, teamId, user.id);
     } finally {
       setVoting(false);
+    }
+  }
+
+  function handleQuickNodbet(teamChoice: string, teamName: string) {
+    const res = placeBet(match!.id, teamChoice, teamName, 1000);
+    if (res.ok) {
+      setFastBetToast(`🔥 Экспресс-ставка 1,000 NOD на победу ${teamName} успешно принята! Проверьте вкладку NODBET.`);
+      setTimeout(() => setFastBetToast(null), 4000);
+    } else {
+      setFastBetToast(`❌ ${res.error || "Ошибка ставки"}`);
+      setTimeout(() => setFastBetToast(null), 4000);
     }
   }
 
@@ -140,6 +157,20 @@ export default function MatchDetail() {
             )}
           </div>
 
+          {(hasVipBoost || hasGoldBadge) && (
+            <div className="mb-6 rounded-xl border border-yellow-500/40 bg-gradient-to-r from-yellow-500/10 to-red-600/10 p-3.5 flex items-center gap-3 text-xs text-yellow-200 shadow-md">
+              <span className="text-xl">{hasGoldBadge ? "✨" : "👑"}</span>
+              <div>
+                <b className="text-yellow-300 block">
+                  {hasGoldBadge ? "✨ У вас активен статус «NODBET Pro» и VIP-Бустер!" : "👑 У вас активен VIP-Бустер от NODBET!"}
+                </b>
+                <span>
+                  Ваш голос в прогнозе учитывается с силой х3, оказывая тройное влияние на зрительский расклад{hasGoldBadge ? " и выделяя ваш никнейм золотым знаком!" : "."}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <VoteOption
               team={teamA}
@@ -162,6 +193,147 @@ export default function MatchDetail() {
           </div>
           <p className="mt-4 text-center text-xs text-zinc-600">
             Всего голосов: {votesA + votesB}. Для защиты от накрутки голосование доступно авторизованным пользователям.
+          </p>
+        </div>
+      )}
+
+      {/* NODBET AI RADAR PERK INTEGRATION */}
+      {teamA && teamB && (
+        <div className="mt-8 rounded-2xl border border-yellow-500/30 bg-[#151212] p-6 sm:p-8 relative overflow-hidden">
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-yellow-500 via-red-600 to-yellow-500" />
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 text-black font-black text-lg">
+                ⚡
+              </span>
+              <div>
+                <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded">
+                  NODBET ANALYTICS & PREDICTION
+                </span>
+                <h3 className="font-display text-xl font-bold text-white mt-0.5">Инсайдерский AI-Радар Исходов</h3>
+              </div>
+            </div>
+
+            {hasRadar ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-green-500/20 border border-green-500/40 px-3 py-1 text-xs font-bold text-green-300">
+                <ShieldCheck size={14} /> Сканер Активен
+              </span>
+            ) : (
+              <button
+                onClick={() => buyPerk("radar")}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 px-4 py-2 text-xs font-black text-black hover:opacity-90 active:scale-95 cursor-pointer"
+              >
+                Разблокировать за 1,500 NOD
+              </button>
+            )}
+          </div>
+
+          {!hasRadar ? (
+            <div className="rounded-xl border border-white/10 bg-black/60 p-6 text-center backdrop-blur-md">
+              <Lock size={28} className="mx-auto text-yellow-400 mb-2" />
+              <h4 className="font-display text-base font-bold text-white">Аналитика закрыта защитным экраном NODBET</h4>
+              <p className="mt-1 text-xs text-zinc-400 max-w-md mx-auto">
+                Откройте AI-Радар, чтобы увидеть вероятность победы на основе Elo, историю K/D в очных встречах и секретный прогноз аналитиков турнира!
+              </p>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4 text-sm">
+              <div className="rounded-xl bg-black/40 p-4 border border-white/10 space-y-3">
+                <div className="flex justify-between text-xs font-bold">
+                  <span className="text-white">{teamA.name} <span className="text-yellow-400 font-mono">61%</span></span>
+                  <span className="text-zinc-400">Шансы на победу по версии NODBET AI</span>
+                  <span className="text-white"><span className="text-red-400 font-mono">39%</span> {teamB.name}</span>
+                </div>
+                <div className="h-3 w-full rounded-full bg-red-600/40 overflow-hidden flex">
+                  <div className="h-full bg-gradient-to-r from-yellow-400 to-amber-500 transition-all duration-500" style={{ width: "61%" }} />
+                  <div className="h-full bg-red-600 transition-all duration-500" style={{ width: "39%" }} />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl bg-white/5 p-4 border border-white/10">
+                  <span className="text-xs font-bold text-zinc-400 uppercase block mb-1">ФАКТОР КЛАТЧА</span>
+                  <p className="text-xs text-zinc-300">
+                    Игроки {teamA.name} имеют средний Faceit Elo <b>2,450+</b>. Вероятность успешного клатча 1v2 в этом матче оценивается в <b>74%</b>.
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-4 border border-white/10">
+                  <span className="text-xs font-bold text-yellow-400 uppercase block mb-1">ВЕРДИКТ NODBET</span>
+                  <p className="text-xs text-zinc-300">
+                    «Рекомендуемая ставка: <b>Победа {teamA.name} (П1)</b> с коэффициентом <b>1.85+</b> или тотал карт в формате {match.format.toUpperCase()}.»
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* QUICK NODBET BETTING WIDGET RIGHT ON MATCH DETAIL */}
+      {teamA && teamB && match.status !== "finished" && (
+        <div className="mt-8 rounded-2xl border border-red-500/40 bg-gradient-to-br from-[#1c0a0a] via-[#120808] to-[#121212] p-6 sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-600 text-white font-black text-lg shadow-lg shadow-red-600/30">
+                🎰
+              </span>
+              <div>
+                <span className="text-xs font-mono font-bold text-red-400 uppercase tracking-widest block">
+                  NODBET QUICK-BET
+                </span>
+                <h3 className="font-display text-xl font-bold text-white">Экспресс-ставка на этот матч</h3>
+              </div>
+            </div>
+            <Link
+              to="/nodbet"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-bold text-zinc-300 hover:bg-white/10 hover:text-white"
+            >
+              В Арену NODBET →
+            </Link>
+          </div>
+
+          {fastBetToast && (
+            <div className="mb-4 rounded-xl border border-yellow-500/40 bg-yellow-950/80 px-4 py-3 text-xs font-bold text-yellow-200 animate-fade-in flex items-center gap-2">
+              <Sparkles size={16} className="text-yellow-400 shrink-0" />
+              <span>{fastBetToast}</span>
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              onClick={() => handleQuickNodbet(teamA.id, teamA.name)}
+              className="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 p-4 transition-all hover:border-red-500/60 hover:bg-red-950/30 cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <TeamLogo src={teamA.logo_url} alt={teamA.name} size={32} />
+                <div className="text-left">
+                  <span className="block font-display font-bold text-white group-hover:text-yellow-300 transition-colors">
+                    Поставить 1,000 NOD на {teamA.name}
+                  </span>
+                  <span className="text-[11px] text-zinc-400">Победа П1 в матче</span>
+                </div>
+              </div>
+              <span className="font-mono font-black text-yellow-400 text-lg">1.85</span>
+            </button>
+
+            <button
+              onClick={() => handleQuickNodbet(teamB.id, teamB.name)}
+              className="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 p-4 transition-all hover:border-red-500/60 hover:bg-red-950/30 cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <TeamLogo src={teamB.logo_url} alt={teamB.name} size={32} />
+                <div className="text-left">
+                  <span className="block font-display font-bold text-white group-hover:text-yellow-300 transition-colors">
+                    Поставить 1,000 NOD на {teamB.name}
+                  </span>
+                  <span className="text-[11px] text-zinc-400">Победа П2 в матче</span>
+                </div>
+              </div>
+              <span className="font-mono font-black text-yellow-400 text-lg">2.15</span>
+            </button>
+          </div>
+          <p className="mt-3 text-center text-[11px] text-zinc-500">
+            Ваш баланс: <b className="text-yellow-400 font-mono">{balance.toLocaleString()} NOD</b>. Все ставки совершаются на виртуальную валюту спонсора!
           </p>
         </div>
       )}

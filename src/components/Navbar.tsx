@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, LogIn, LogOut, User } from "lucide-react";
+import { NavLink, useNavigate, Link } from "react-router-dom";
+import { Menu, X, LogIn, LogOut, User, Flame } from "lucide-react";
 import { useUserAuth } from "../context/UserAuthContext";
+import { useNodbet } from "../context/NodbetContext";
 import AuthModal from "./AuthModal";
 
 const LINKS = [
   { to: "/", label: "Главная", end: true },
+  { to: "/nodbet", label: "NODBET 🎰", special: true },
   { to: "/teams", label: "Команды" },
   { to: "/bracket", label: "Турнирная сетка" },
   { to: "/matches", label: "Матчи" },
@@ -18,6 +20,7 @@ export default function Navbar() {
   const clickCount = useRef(0);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user, signOut, setAuthModalOpen, setAuthMode } = useUserAuth();
+  const { balance, hasGoldBadge, hasVipBoost } = useNodbet();
 
   // Скрытый вход в админ-панель: 5 быстрых кликов по логотипу
   const handleLogoClick = () => {
@@ -56,15 +59,21 @@ export default function Navbar() {
                 to={l.to}
                 end={l.end}
                 className={({ isActive }) =>
-                  `rounded-md px-3.5 py-2 text-sm font-medium transition-colors ${
-                    isActive ? "text-white" : "text-zinc-400 hover:text-white"
+                  `rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
+                    l.special
+                      ? isActive
+                        ? "bg-red-600/20 text-yellow-300 border border-red-500/40 shadow-sm"
+                        : "text-red-400 hover:bg-red-600/10 hover:text-yellow-300 font-bold"
+                      : isActive
+                      ? "text-white"
+                      : "text-zinc-400 hover:text-white"
                   }`
                 }
               >
                 {({ isActive }) => (
-                  <span className="relative">
+                  <span className="relative flex items-center gap-1">
                     {l.label}
-                    {isActive && (
+                    {isActive && !l.special && (
                       <span className="absolute -bottom-[9px] left-0 right-0 h-[2px] bg-gradient-brand" />
                     )}
                   </span>
@@ -74,6 +83,15 @@ export default function Navbar() {
           </nav>
 
           <div className="hidden items-center gap-3 lg:flex">
+            <Link
+              to="/nodbet"
+              title="Ваш баланс в NODBET Арене"
+              className="flex items-center gap-1.5 rounded-lg border border-yellow-500/30 bg-gradient-to-r from-yellow-500/10 to-red-500/10 px-3 py-1.5 text-xs font-mono font-bold text-yellow-400 transition-all hover:scale-105 hover:border-yellow-500/60"
+            >
+              <Flame size={14} className="fill-yellow-400 text-yellow-400" />
+              <span>{balance.toLocaleString()} NOD</span>
+            </Link>
+
             <a
               href="https://cybershoke.net/"
               target="_blank"
@@ -85,8 +103,11 @@ export default function Navbar() {
 
             {user ? (
               <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
-                <User size={15} className="text-fuchsia-400" />
-                <span className="max-w-[140px] truncate text-xs font-medium text-zinc-200">{user.email}</span>
+                <User size={15} className={hasGoldBadge ? "text-yellow-400" : hasVipBoost ? "text-red-400" : "text-fuchsia-400"} />
+                <span className="max-w-[140px] truncate text-xs font-medium text-zinc-200">
+                  {user.email}
+                  {hasGoldBadge && <span className="ml-1 text-[10px] text-yellow-400 font-bold">👑</span>}
+                </span>
                 <button
                   onClick={() => signOut()}
                   title="Выйти"
@@ -115,6 +136,17 @@ export default function Navbar() {
 
         {open && (
           <nav className="flex flex-col gap-1 border-t border-white/5 px-4 py-3 lg:hidden">
+            <Link
+              to="/nodbet"
+              onClick={() => setOpen(false)}
+              className="flex items-center justify-between rounded-lg border border-yellow-500/30 bg-gradient-to-r from-yellow-500/10 to-red-500/10 px-3 py-2 text-xs font-mono font-bold text-yellow-400 mb-2"
+            >
+              <span className="flex items-center gap-1.5">
+                <Flame size={14} className="fill-yellow-400 text-yellow-400" /> Баланс NODBET
+              </span>
+              <span>{balance.toLocaleString()} NOD →</span>
+            </Link>
+
             {LINKS.map((l) => (
               <NavLink
                 key={l.to}
@@ -122,7 +154,15 @@ export default function Navbar() {
                 end={l.end}
                 onClick={() => setOpen(false)}
                 className={({ isActive }) =>
-                  `rounded-md px-3 py-2.5 text-sm font-medium ${isActive ? "bg-white/5 text-white" : "text-zinc-400"}`
+                  `rounded-md px-3 py-2.5 text-sm font-medium ${
+                    l.special
+                      ? isActive
+                        ? "bg-red-600/20 text-yellow-300 font-bold"
+                        : "text-red-400 font-bold"
+                      : isActive
+                      ? "bg-white/5 text-white"
+                      : "text-zinc-400"
+                  }`
                 }
               >
                 {l.label}

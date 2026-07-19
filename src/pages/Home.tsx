@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Trophy, Users, Swords, Layers, ArrowRight, Award, Sparkles, Crown } from "lucide-react";
+import { Trophy, Users, Swords, Layers, ArrowRight, Sparkles, Crown } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { STAGE_LABELS } from "../utils/scoring";
 import TeamLogo from "../components/TeamLogo";
