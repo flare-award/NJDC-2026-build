@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Zap, Gift, ShieldCheck, Flame, ExternalLink, X, CheckCircle2 } from "lucide-react";
 
 export default function Sponsors() {
@@ -71,17 +72,25 @@ export default function Sponsors() {
           </div>
 
           {/* CTA Button */}
-          <div className="mt-8 flex items-center justify-between pt-4 border-t border-white/20">
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-white/20">
             <div className="text-xs font-bold text-white/90">
-              Коэффициент 2.50+ на CS2
+              Коэффициент 2.50+ на CS2 · <span className="text-yellow-300">Бонус 10,000 NOD</span>
             </div>
-            <button
-              onClick={() => setActiveModal("nodbet")}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-black text-[#E10600] uppercase tracking-wider transition-all duration-200 hover:bg-yellow-300 hover:text-black hover:shadow-lg active:scale-95 cursor-pointer"
-            >
-              Зарядить на игру
-              <ExternalLink size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveModal("nodbet")}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-black/40 px-3.5 py-2.5 text-xs font-bold text-white border border-white/20 hover:bg-black/60 cursor-pointer"
+              >
+                Промокод
+              </button>
+              <Link
+                to="/nodbet"
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-black text-[#E10600] uppercase tracking-wider transition-all duration-200 hover:bg-yellow-300 hover:text-black hover:shadow-lg active:scale-95 cursor-pointer"
+              >
+                В Арену Ставок 🎰
+                <ExternalLink size={16} />
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -179,12 +188,30 @@ export default function Sponsors() {
                 <span className="font-mono text-lg font-bold text-gradient">NJDC-BONUS-2026</span>
               </div>
 
-              <button
-                onClick={() => setActiveModal(null)}
-                className="mt-6 w-full rounded-xl bg-gradient-brand py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-              >
-                Понятно, на главный экран
-              </button>
+              {activeModal === "nodbet" ? (
+                <div className="mt-6 flex flex-col gap-2.5 w-full">
+                  <Link
+                    to="/nodbet"
+                    onClick={() => setActiveModal(null)}
+                    className="w-full rounded-xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 py-3.5 text-sm font-black uppercase text-white shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer block text-center"
+                  >
+                    🎰 Открыть Арену Ставок и Рулетку (+10,000 NOD)
+                  </Link>
+                  <button
+                    onClick={() => setActiveModal(null)}
+                    className="w-full rounded-xl bg-white/10 py-2.5 text-xs font-semibold text-zinc-300 transition-colors hover:bg-white/20 cursor-pointer"
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setActiveModal(null)}
+                  className="mt-6 w-full rounded-xl bg-gradient-brand py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 cursor-pointer"
+                >
+                  Понятно, на главный экран
+                </button>
+              )}
             </div>
           </div>
         </div>

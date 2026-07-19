@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route } from "react-router-dom";
 import { DataProvider } from "./context/DataContext";
 import { AuthProvider } from "./context/AuthContext";
 import { UserAuthProvider } from "./context/UserAuthContext";
+import { NodbetProvider } from "./context/NodbetContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Home from "./pages/Home";
@@ -12,6 +13,7 @@ import Matches from "./pages/Matches";
 import MatchDetail from "./pages/MatchDetail";
 import Leaderboard from "./pages/Leaderboard";
 import AdminPage from "./pages/admin/AdminPage";
+import NodbetPage from "./pages/NodbetPage";
 
 function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -28,26 +30,29 @@ export default function App() {
     <AuthProvider>
       <UserAuthProvider>
         <DataProvider>
-          <HashRouter>
-            <Routes>
-              <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
-              <Route path="/teams" element={<SiteLayout><Teams /></SiteLayout>} />
-              <Route path="/teams/:id" element={<SiteLayout><TeamDetail /></SiteLayout>} />
-              <Route path="/bracket" element={<SiteLayout><Bracket /></SiteLayout>} />
-              <Route path="/matches" element={<SiteLayout><Matches /></SiteLayout>} />
-              <Route path="/matches/:id" element={<SiteLayout><MatchDetail /></SiteLayout>} />
-              <Route path="/leaderboard" element={<SiteLayout><Leaderboard /></SiteLayout>} />
-              <Route
-                path="/nb-admin-9991"
-                element={
-                  <div className="min-h-screen bg-[#0d0d0d] text-white antialiased">
-                    <AdminPage />
-                  </div>
-                }
-              />
-              <Route path="*" element={<SiteLayout><Home /></SiteLayout>} />
-            </Routes>
-          </HashRouter>
+          <NodbetProvider>
+            <HashRouter>
+              <Routes>
+                <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
+                <Route path="/nodbet" element={<SiteLayout><NodbetPage /></SiteLayout>} />
+                <Route path="/teams" element={<SiteLayout><Teams /></SiteLayout>} />
+                <Route path="/teams/:id" element={<SiteLayout><TeamDetail /></SiteLayout>} />
+                <Route path="/bracket" element={<SiteLayout><Bracket /></SiteLayout>} />
+                <Route path="/matches" element={<SiteLayout><Matches /></SiteLayout>} />
+                <Route path="/matches/:id" element={<SiteLayout><MatchDetail /></SiteLayout>} />
+                <Route path="/leaderboard" element={<SiteLayout><Leaderboard /></SiteLayout>} />
+                <Route
+                  path="/nb-admin-9991"
+                  element={
+                    <div className="min-h-screen bg-[#0d0d0d] text-white antialiased">
+                      <AdminPage />
+                    </div>
+                  }
+                />
+                <Route path="*" element={<SiteLayout><Home /></SiteLayout>} />
+              </Routes>
+            </HashRouter>
+          </NodbetProvider>
         </DataProvider>
       </UserAuthProvider>
     </AuthProvider>
