@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
 import { NavLink, useNavigate, Link } from "react-router-dom";
-import { Menu, X, LogIn, LogOut, User, Flame } from "lucide-react";
+import { Menu, X, LogIn, LogOut, User, Flame, Pencil } from "lucide-react";
 import { useUserAuth } from "../context/UserAuthContext";
 import { useNodbet } from "../context/NodbetContext";
 import AuthModal from "./AuthModal";
+import NicknameModal from "./NicknameModal";
 
 const LINKS = [
   { to: "/", label: "Главная", end: true },
@@ -20,7 +21,8 @@ export default function Navbar() {
   const clickCount = useRef(0);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user, signOut, setAuthModalOpen, setAuthMode } = useUserAuth();
-  const { balance, hasGoldBadge, hasVipBoost } = useNodbet();
+  const { balance, hasGoldBadge, hasVipBoost, displayNickname, hasCustomNickname } = useNodbet();
+  const [nicknameModalOpen, setNicknameModalOpen] = useState(false);
 
   // Скрытый вход в админ-панель: 5 быстрых кликов по логотипу
   const handleLogoClick = () => {
@@ -93,12 +95,25 @@ export default function Navbar() {
             </Link>
 
             {user ? (
-              <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
+              <div className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
                 <User size={15} className={hasGoldBadge ? "text-yellow-400" : hasVipBoost ? "text-red-400" : "text-fuchsia-400"} />
-                <span className="max-w-[140px] truncate text-xs font-medium text-zinc-200">
-                  {user.email}
-                  {hasGoldBadge && <span className="ml-1 text-[10px] text-yellow-400 font-bold">👑</span>}
+                <span className="flex max-w-[150px] flex-col leading-tight">
+                  <span className="truncate text-xs font-semibold text-zinc-100" title={`Никнейм: ${displayNickname}`}>
+                    {displayNickname}
+                    {hasGoldBadge && <span className="ml-1 text-[10px] text-yellow-400 font-bold">👑</span>}
+                    {!hasCustomNickname && <span className="ml-1 text-[9px] text-zinc-500">(временный)</span>}
+                  </span>
+                  <span className="truncate text-[10px] text-zinc-500" title={user.email}>
+                    {user.email}
+                  </span>
                 </span>
+                <button
+                  onClick={() => setNicknameModalOpen(true)}
+                  title="Изменить никнейм (виден в Топе Хайроллеров)"
+                  className="text-zinc-400 hover:text-yellow-300 transition-colors"
+                >
+                  <Pencil size={13} />
+                </button>
                 <button
                   onClick={() => signOut()}
                   title="Выйти"
@@ -163,7 +178,23 @@ export default function Navbar() {
               {user ? (
                 <div className="flex items-center gap-2 text-xs text-zinc-300 truncate">
                   <User size={14} className="text-fuchsia-400 shrink-0" />
-                  <span className="truncate">{user.email}</span>
+                  <span className="flex flex-col leading-tight truncate">
+                    <span className="font-semibold text-zinc-100 truncate">
+                      {displayNickname}
+                      {hasGoldBadge && <span className="ml-1 text-[10px] text-yellow-400">👑</span>}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 truncate">{user.email}</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      setOpen(false);
+                      setNicknameModalOpen(true);
+                    }}
+                    title="Изменить никнейм"
+                    className="text-zinc-400 hover:text-yellow-300 transition-colors shrink-0"
+                  >
+                    <Pencil size={13} />
+                  </button>
                 </div>
               ) : (
                 <span className="text-xs text-zinc-500">Войдите для прогнозов</span>
@@ -192,6 +223,7 @@ export default function Navbar() {
         )}
       </header>
       <AuthModal />
+      <NicknameModal open={nicknameModalOpen} onClose={() => setNicknameModalOpen(false)} />
     </>
   );
 }
