@@ -92,15 +92,6 @@ export default function Navbar() {
               <span>{balance.toLocaleString()} NOD</span>
             </Link>
 
-            <a
-              href="https://cybershoke.net/"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-md border border-white/10 px-3.5 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-white/30 hover:text-white"
-            >
-              CYBERSHOKE ↗
-            </a>
-
             {user ? (
               <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
                 <User size={15} className={hasGoldBadge ? "text-yellow-400" : hasVipBoost ? "text-red-400" : "text-fuchsia-400"} />
@@ -168,15 +159,6 @@ export default function Navbar() {
                 {l.label}
               </NavLink>
             ))}
-            <a
-              href="https://cybershoke.net/"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-md px-3 py-2.5 text-sm font-medium text-zinc-400"
-            >
-              CYBERSHOKE ↗
-            </a>
-
             <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between">
               {user ? (
                 <div className="flex items-center gap-2 text-xs text-zinc-300 truncate">
