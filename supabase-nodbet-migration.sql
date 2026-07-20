@@ -1,11 +1,15 @@
 -- =========================================================
 -- МИГРАЦИЯ NODBET: баланс NOD-Коинов, ставки, рулетка,
--- Топ Хайроллеров и никнеймы пользователей.
+-- Топ Хайроллеров, уровни и никнеймы пользователей.
 --
 -- Выполните этот файл целиком в Supabase → SQL Editor.
--- Выполнять нужно ПОСЛЕ основного файла supabase-schema.sql
--- (те команды вы уже вводили — этот файл ничего в них не меняет,
--- он только добавляет новые таблицы вкладки NODBET).
+-- Выполнять нужно ПОСЛЕ основного файла supabase-schema.sql.
+--
+-- ВНИМАНИЕ: этот файл описывает АКТУАЛЬНУЮ схему (для НОВОЙ,
+-- чистой базы). Если вы уже запускали старую версию этой миграции,
+-- НЕ запускайте её повторно — вместо этого выполните один раз
+-- файл supabase-nodbet-fix-migration.sql, который обновит
+-- существующую базу и уберёт читерские бусты/накрутки.
 -- =========================================================
 
 create extension if not exists "pgcrypto";
@@ -20,14 +24,16 @@ create extension if not exists "pgcrypto";
 create table if not exists nodbet_profiles (
   user_id uuid primary key,                  -- = auth.users.id (Supabase Auth)
   nickname text,                             -- NULL = временный «фруктовый» ник на клиенте
-  balance int not null default 10000,        -- баланс NOD-Коинов
-  xp int not null default 500,               -- опыт игрока
+  balance bigint not null default 10000,     -- баланс NOD-Коинов (bigint — без потолка)
+  xp int not null default 0,                 -- опыт игрока (уровни считаются из XP)
   last_daily_claim timestamptz,              -- когда забран ежедневный бонус
-  vip_boost_x3 boolean not null default false,
-  insurance_count int not null default 1,
-  double_win_count int not null default 1,
-  radar_unlocked boolean not null default false,
-  gold_badge boolean not null default false,
+  -- Честные привилегии магазина (без читов):
+  radar_unlocked boolean not null default false,      -- ⚡ AI-Радар
+  double_spin boolean not null default false,         -- 🎡 Дабл спин
+  hall_frame boolean not null default false,          -- 🖼️ Рамка Зала Славы (косметика)
+  custom_status_owned boolean not null default false, -- 🏷️ Право на свой статус
+  coin_magnet boolean not null default false,         -- 🧲 Мультипас (+10% XP)
+  custom_status_text text,                             -- текст собственного статуса
   total_won bigint not null default 0,       -- всего выиграно (денормализовано для топа)
   bets_count int not null default 0,         -- ставки + спины (денормализовано для топа)
   created_at timestamptz not null default now(),
@@ -69,12 +75,11 @@ create table if not exists nodbet_bets (
   match_title text not null default '',
   team_choice text not null default '',
   team_name text not null default '',
-  amount int not null default 0,
+  amount bigint not null default 0,
   odds numeric not null default 1.9,
+  overtime_prediction boolean not null default false, -- прогноз игрока: будет ли овертайм
   status text not null default 'pending',      -- pending | won | lost | refunded
-  used_insurance boolean not null default false,
-  used_double_win boolean not null default false,
-  payout int not null default 0,
+  payout bigint not null default 0,
   created_at timestamptz not null default now(),
   primary key (user_id, id)
 );
@@ -87,11 +92,11 @@ create index if not exists nodbet_bets_user_idx on nodbet_bets (user_id, created
 create table if not exists nodbet_roulette_spins (
   user_id uuid not null references nodbet_profiles(user_id) on delete cascade,
   id text not null,
+  bonus_id text not null default 'normal',     -- strong_neg | weak_neg | normal | big | super | jackpot
   label text not null default '',
-  color text not null default 'red',           -- red | black | green | gold | purple
   multiplier numeric not null default 1,
-  bonus_text text,
-  won_coins int not null default 0,
+  is_negative boolean not null default false,  -- был ли бонус отрицательным
+  won_coins bigint not null default 0,         -- может быть отрицательным (потеря)
   created_at timestamptz not null default now(),
   primary key (user_id, id)
 );

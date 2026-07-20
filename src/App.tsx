@@ -5,6 +5,8 @@ import { UserAuthProvider } from "./context/UserAuthContext";
 import { NodbetProvider } from "./context/NodbetContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+import SideBanners from "./components/SideBanners";
+import EmailConfirmOverlay from "./components/EmailConfirmOverlay";
 import Home from "./pages/Home";
 import Teams from "./pages/Teams";
 import TeamDetail from "./pages/TeamDetail";
@@ -19,6 +21,7 @@ function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[#0d0d0d] text-white antialiased">
       <Navbar />
+      <SideBanners />
       <main>{children}</main>
       <Footer />
     </div>
@@ -31,6 +34,7 @@ export default function App() {
       <UserAuthProvider>
         <DataProvider>
           <NodbetProvider>
+            <EmailConfirmOverlay />
             <HashRouter>
               <Routes>
                 <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />

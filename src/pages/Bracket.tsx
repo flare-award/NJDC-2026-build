@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { computeStandings, STAGE_LABELS } from "../utils/scoring";
+import { seriesScore } from "../utils/matchMaps";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
 
@@ -142,7 +143,7 @@ function MatchMiniCard({ matchId, highlight = false }: { matchId: string; highli
           <span className="font-medium text-zinc-200">{teamA?.name ?? "TBD"}</span>
         </div>
         <span className="font-display font-bold text-white">
-          {m.status === "upcoming" ? "—" : `${m.score_a}:${m.score_b}`}
+          {m.status === "upcoming" ? "—" : (() => { const s = seriesScore(m); return `${s.a}:${s.b}`; })()}
         </span>
         <div className="flex items-center gap-2">
           <span className="font-medium text-zinc-200">{teamB?.name ?? "TBD"}</span>

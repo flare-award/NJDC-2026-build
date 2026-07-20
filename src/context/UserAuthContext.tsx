@@ -16,6 +16,9 @@ interface UserAuthContextValue {
   signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signUp: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => Promise<void>;
+  // Плашка подтверждения почты после регистрации (пункт 10)
+  emailConfirmPrompt: { email: string } | null;
+  dismissEmailConfirmPrompt: () => void;
 }
 
 const LOCAL_USER_KEY = "njdc_local_user";
@@ -28,6 +31,10 @@ export function UserAuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  // Плашка «подтвердите email» (пункт 10). Живёт только в памяти:
+  // при перезагрузке страницы она пропадает и больше не появляется.
+  const [emailConfirmPrompt, setEmailConfirmPrompt] = useState<{ email: string } | null>(null);
+  const dismissEmailConfirmPrompt = useCallback(() => setEmailConfirmPrompt(null), []);
 
   useEffect(() => {
     let mounted = true;
@@ -112,6 +119,8 @@ export function UserAuthProvider({ children }: { children: ReactNode }) {
       if (data.user) {
         setUser({ id: data.user.id, email: data.user.email ?? cleanEmail });
       }
+      // Пункт 10: показываем плашку с просьбой подтвердить email.
+      setEmailConfirmPrompt({ email: cleanEmail });
       return { ok: true };
     } else {
       // Local fallback DB
@@ -154,8 +163,10 @@ export function UserAuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
+      emailConfirmPrompt,
+      dismissEmailConfirmPrompt,
     }),
-    [user, loading, authModalOpen, authMode, signIn, signUp, signOut]
+    [user, loading, authModalOpen, authMode, signIn, signUp, signOut, emailConfirmPrompt, dismissEmailConfirmPrompt]
   );
 
   return <UserAuthContext.Provider value={value}>{children}</UserAuthContext.Provider>;

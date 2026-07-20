@@ -27,7 +27,7 @@ export default function Sponsors() {
       </div>
 
       {/* BANNERS GRID */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* ==================== 1. NODBET ==================== */}
         <div className="group relative overflow-hidden rounded-2xl bg-[#E10600] p-6 sm:p-8 text-white shadow-xl shadow-red-950/20 transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl hover:shadow-red-600/30 border border-red-500/30 flex flex-col justify-between">
           {/* Decorative background overlay */}
@@ -149,6 +149,57 @@ export default function Sponsors() {
               Забрать бонус
               <ExternalLink size={16} />
             </button>
+          </div>
+        </div>
+        {/* ==================== 3. QENERGY (стиль LIT ENERGY) ==================== */}
+        <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#05201d] via-[#0a0f10] to-black p-6 sm:p-8 text-white shadow-xl shadow-[#25e3c9]/10 transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl hover:shadow-[#25e3c9]/20 border border-[#25e3c9]/40 flex flex-col justify-between">
+          <div className="absolute -right-10 -top-10 h-60 w-60 rounded-full bg-[#25e3c9]/20 blur-3xl pointer-events-none" />
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-[#25e3c9] via-white to-[#25e3c9]" />
+
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <span className="inline-flex items-center gap-1.5 rounded bg-[#25e3c9] px-2.5 py-1 font-display text-xs font-black tracking-widest text-black uppercase shadow">
+                <Zap size={14} className="text-black fill-black" />
+                QEnergy
+              </span>
+              <span className="text-[10px] font-mono font-bold tracking-widest text-[#25e3c9]/80 bg-black/40 px-2 py-0.5 rounded border border-[#25e3c9]/20">
+                ЭНЕРГЕТИК · 18+
+              </span>
+            </div>
+
+            {/* слоган в стиле референса */}
+            <div className="my-2">
+              <h3 className="font-display text-4xl sm:text-5xl font-black italic tracking-tight uppercase leading-[0.9] drop-shadow-md">
+                #ЗАГОРАЙСЯ<br />И <span className="text-[#25e3c9]">ПОБЕЖДАЙ</span>
+              </h3>
+              <div className="mt-3 inline-block -rotate-1 rounded bg-black px-3 py-1">
+                <p className="text-xs font-bold text-[#25e3c9]">Энергетик от @qusti</p>
+              </div>
+            </div>
+
+            {/* Три напитка */}
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              {[
+                { img: "/sponsors/qenergy-chkoda.png", name: "«Чкода»", flavor: "Кола" },
+                { img: "/sponsors/qenergy-bmvnograd.png", name: "«БМВноград»", flavor: "Виноград" },
+                { img: "/sponsors/qenergy-lada-granata.png", name: "«Лада Граната»", flavor: "Гранат" },
+              ].map((d) => (
+                <div key={d.name} className="rounded-xl bg-black/40 border border-[#25e3c9]/20 p-2 text-center">
+                  <img src={d.img} alt={`QEnergy ${d.name}`} className="mx-auto h-24 w-auto object-contain drop-shadow-[0_0_12px_rgba(37,227,201,0.3)]" loading="lazy" />
+                  <p className="mt-1 text-[11px] font-bold text-white leading-tight">{d.name}</p>
+                  <p className="text-[10px] text-[#25e3c9]">{d.flavor}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between gap-3 pt-4 border-t border-[#25e3c9]/20">
+            <p className="text-[10px] leading-tight text-zinc-500">
+              Напиток не рекомендуется детям до 18 лет, беременным и лицам с повышенной нервной возбудимостью.
+            </p>
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#25e3c9] px-4 py-2.5 text-sm font-black text-black uppercase tracking-wider">
+              Три вкуса
+            </span>
           </div>
         </div>
       </div>

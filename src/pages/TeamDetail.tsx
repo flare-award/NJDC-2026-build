@@ -4,6 +4,7 @@ import { useData } from "../context/DataContext";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
 import { computeStandings } from "../utils/scoring";
+import { seriesScore } from "../utils/matchMaps";
 
 export default function TeamDetail() {
   const { id } = useParams();
@@ -79,8 +80,9 @@ export default function TeamDetail() {
         {teamMatches.map((m) => {
           const opponentId = m.team_a === id ? m.team_b : m.team_a;
           const opponent = teams.find((t) => t.id === opponentId);
-          const myScore = m.team_a === id ? m.score_a : m.score_b;
-          const oppScore = m.team_a === id ? m.score_b : m.score_a;
+          const series = seriesScore(m);
+          const myScore = m.team_a === id ? series.a : series.b;
+          const oppScore = m.team_a === id ? series.b : series.a;
           return (
             <Link
               key={m.id}

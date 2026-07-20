@@ -1,4 +1,5 @@
 import type { Match, Team } from "../types";
+import { seriesScore } from "./matchMaps";
 
 export interface StandingRow extends Team {
   played: number;
@@ -49,13 +50,15 @@ export function computeStandings(teams: Team[], matches: Match[]): StandingRow[]
       const a = table[m.team_a as string];
       const b = table[m.team_b as string];
       if (!a || !b) return;
-      const [pa, pb] = pointsForMatch(m.format, m.score_a, m.score_b);
+      // Счёт серии (карт выиграно) — устойчиво к старым и новым данным.
+      const { a: sa, b: sb } = seriesScore(m);
+      const [pa, pb] = pointsForMatch(m.format, sa, sb);
       a.played += 1;
       b.played += 1;
-      a.mapsWon += m.score_a;
-      a.mapsLost += m.score_b;
-      b.mapsWon += m.score_b;
-      b.mapsLost += m.score_a;
+      a.mapsWon += sa;
+      a.mapsLost += sb;
+      b.mapsWon += sb;
+      b.mapsLost += sa;
       a.points += pa;
       b.points += pb;
       const stageKey = `stage${m.stage}Points` as "stage1Points" | "stage2Points" | "stage3Points" | "stage4Points";
