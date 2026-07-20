@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, RotateCcw } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Link2 } from "lucide-react";
 import { useData } from "../../context/DataContext";
 import type { Match, MatchFormat, MatchStatus, MatchMap } from "../../types";
 import { inputClass, labelClass, btnPrimary, btnGhost, btnDanger } from "./adminStyles";
@@ -17,7 +17,7 @@ function emptyMatch(): Match {
     team_b: null,
     score_a: 0,
     score_b: 0,
-    maps: [{ score_a: 0, score_b: 0 }],
+    maps: [{ score_a: 0, score_b: 0, cybershoke_url: "" }],
     status: "upcoming",
     cybershoke_url: "",
     scheduled_at: "",
@@ -37,7 +37,6 @@ export default function MatchesTab() {
     if (!draft) return;
     setSaving(true);
     try {
-      // Пересчитываем счёт серии (карт выиграно) из карт — для таблицы/сетки.
       await upsertMatch(withRecomputedSeries(draft));
       setDraft(null);
     } finally {
@@ -45,18 +44,16 @@ export default function MatchesTab() {
     }
   }
 
-  // Открываем матч на редактирование с нормализованными картами.
   function editMatch(m: Match) {
     setDraft({ ...m, maps: normalizeMaps(m) });
   }
 
-  // Меняем формат — подгоняем число карт.
   function changeFormat(format: MatchFormat) {
     if (!draft) return;
     const max = maxMapCount(format);
     const current = normalizeMaps({ ...draft, format });
     const maps: MatchMap[] = [];
-    for (let i = 0; i < max; i++) maps.push(current[i] ?? { score_a: 0, score_b: 0 });
+    for (let i = 0; i < max; i++) maps.push(current[i] ?? { score_a: 0, score_b: 0, cybershoke_url: "" });
     setDraft({ ...draft, format, maps });
   }
 
@@ -84,14 +81,18 @@ export default function MatchesTab() {
           .map((m) => {
             const teamA = teams.find((t) => t.id === m.team_a);
             const teamB = teams.find((t) => t.id === m.team_b);
+            const maps = normalizeMaps(m);
+            const hasPerMapLinks = maps.some((mp) => !!mp.cybershoke_url);
             return (
               <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.02] px-4 py-3">
                 <div>
                   <p className="font-semibold text-white">
                     {STAGE_LABELS[m.stage]?.emoji} {m.title} · {m.format.toUpperCase()}
+                    {hasPerMapLinks && <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-cyan-400"><Link2 size={10}/> отдельные ссылки на катки</span>}
                   </p>
                   <p className="text-xs text-zinc-500">
                     {teamA?.name ?? "TBD"} {m.score_a}:{m.score_b} {teamB?.name ?? "TBD"} · {m.status}
+                    {m.cybershoke_url && " · 🔗 CYBERSHOKE"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -202,59 +203,71 @@ export default function MatchesTab() {
                 ))}
               </select>
             </div>
-            {/* Счёт по картам (в раундах). Bo1 — 1 карта, Bo2 — 2, Bo3 — до 3. */}
+            {/* Счёт по картам + отдельные ссылки CYBERSHOKE на каждую катку */}
             <div className="sm:col-span-3">
               <label className={labelClass}>
-                Счёт по картам (в раундах) — {draft.format.toUpperCase()} ·{" "}
+                Счёт по картам (в раундах) + ссылки CYBERSHOKE на катки — {draft.format.toUpperCase()} ·{" "}
                 {maxMapCount(draft.format)} {maxMapCount(draft.format) === 1 ? "карта" : maxMapCount(draft.format) === 2 ? "карты" : "до 3 карт"}
               </label>
-              <div className="mt-1 space-y-2">
+              <div className="mt-1 space-y-3">
                 {normalizeMaps(draft).map((mp, i) => {
                   const w = mapWinner(mp);
                   const ot = mapHadOvertime(mp);
                   const isBo3Third = draft.format === "bo3" && i === 2;
                   return (
-                    <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
-                      <span className="w-16 text-xs font-semibold text-zinc-400">Карта {i + 1}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        className={`${inputClass} w-20`}
-                        value={mp.score_a}
-                        onChange={(e) => updateMap(i, { score_a: Math.max(0, Number(e.target.value)) })}
-                        title="Раунды команды A"
-                      />
-                      <span className="text-zinc-500">:</span>
-                      <input
-                        type="number"
-                        min={0}
-                        className={`${inputClass} w-20`}
-                        value={mp.score_b}
-                        onChange={(e) => updateMap(i, { score_b: Math.max(0, Number(e.target.value)) })}
-                        title="Раунды команды B"
-                      />
-                      <span className="text-[11px] text-zinc-500">
-                        {w ? `Победа ${w === "a" ? "A" : "B"}` : "не сыграна"}
-                        {ot ? " · ОВЕРТАЙМ" : ""}
-                        {isBo3Third ? " · нужна только при счёте 1:1" : ""}
-                      </span>
+                    <div key={i} className="rounded-lg border border-white/8 bg-white/[0.02] px-3 py-3 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="w-16 text-xs font-semibold text-zinc-400">Карта {i + 1}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          className={`${inputClass} w-20`}
+                          value={mp.score_a}
+                          onChange={(e) => updateMap(i, { score_a: Math.max(0, Number(e.target.value)) })}
+                          title="Раунды команды A"
+                        />
+                        <span className="text-zinc-500">:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          className={`${inputClass} w-20`}
+                          value={mp.score_b}
+                          onChange={(e) => updateMap(i, { score_b: Math.max(0, Number(e.target.value)) })}
+                          title="Раунды команды B"
+                        />
+                        <span className="text-[11px] text-zinc-500">
+                          {w ? `Победа ${w === "a" ? "A" : "B"}` : "не сыграна"}
+                          {ot ? " · ОВЕРТАЙМ" : ""}
+                          {isBo3Third ? " · нужна только при счёте 1:1" : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-zinc-500 flex items-center gap-1"><Link2 size={12}/> CYBERSHOKE ссылка на эту катку:</span>
+                        <input
+                          className={`${inputClass} flex-1`}
+                          placeholder={i===0 ? "https://cybershoke.net/ru/match/100... — катка 1" : `https://cybershoke.net/ru/match/... — катка ${i+1}`}
+                          value={mp.cybershoke_url || ""}
+                          onChange={(e) => updateMap(i, { cybershoke_url: e.target.value })}
+                        />
+                      </div>
                     </div>
                   );
                 })}
               </div>
-              <p className="mt-1 text-xs text-zinc-500">
-                Овертайм определяется автоматически: если у команды больше 13 раундов на карте (например 16:14). Счёт серии
-                (карт выиграно) для таблицы и сетки считается сам.
+              <p className="mt-2 text-xs text-zinc-500">
+                Для Bo2 и Bo3 теперь можно указать отдельную ссылку CYBERSHOKE на каждую катку. Если оставите пустым — будет использована общая ссылка матча.
+                Овертайм определяется автоматически: если у команды больше 13 раундов. Счёт серии считается сам.
               </p>
             </div>
             <div className="sm:col-span-3">
-              <label className={labelClass}>Ссылка на матч CYBERSHOKE</label>
+              <label className={labelClass}>Общая ссылка на матч CYBERSHOKE (fallback для 1-й катки и старых данных)</label>
               <input
                 className={inputClass}
                 placeholder="https://cybershoke.net/ru/match/10010699"
                 value={draft.cybershoke_url}
                 onChange={(e) => setDraft({ ...draft, cybershoke_url: e.target.value })}
               />
+              <p className="mt-1 text-[11px] text-zinc-500">Если для Карты 1 указана своя ссылка выше, она приоритетнее этой общей.</p>
             </div>
             <div className="sm:col-span-2">
               <label className={labelClass}>Дата / время (произвольный текст)</label>
@@ -271,8 +284,7 @@ export default function MatchesTab() {
             </div>
           </div>
           <p className="mt-3 text-xs text-zinc-500">
-            Очки в турнирной таблице считаются автоматически: Bo1 — 3 очка победителю; Bo2 — 3 очка за 2:0, по 1
-            очку за ничью 1:1; Bo3 (этап 5) — очки не начисляются, это стадия плей-офф.
+            Очки: Bo1 — 3 очка победителю; Bo2 — 3 очка за 2:0, по 1 очку за ничью 1:1; Bo3 — очки не начисляются, это плей-офф.
           </p>
           <div className="mt-5 flex gap-3">
             <button className={btnPrimary} disabled={saving} onClick={handleSave}>

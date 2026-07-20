@@ -5,6 +5,7 @@ export type MatchStatus = "upcoming" | "live" | "finished";
 export interface MatchMap {
   score_a: number; // раунды команды A на этой карте
   score_b: number; // раунды команды B на этой карте
+  cybershoke_url?: string; // ссылка на катку на CYBERSHOKE (для Bo2/Bo3 — своя на каждую карту)
 }
 
 export interface Team {
@@ -38,9 +39,11 @@ export interface Match {
   team_b: string | null;
   score_a: number; // счёт серии = карт выиграно командой A (для таблицы/сетки)
   score_b: number; // счёт серии = карт выиграно командой B
-  maps?: MatchMap[]; // счёт по картам в раундах (bo1: 1 карта, bo2: 2, bo3: 2-3)
+  maps?: MatchMap[]; // счёт по картам в раундах (bo1: 1 карта, bo2: 2, bo3: 2-3) + ссылка на катку
   status: MatchStatus;
-  cybershoke_url: string;
+  cybershoke_url: string; // общая ссылка на матч (fallback для 1-й катки)
+  cybershoke_url_2?: string; // ссылка на 2-ю катку (Bo2/Bo3) — fallback
+  cybershoke_url_3?: string; // ссылка на 3-ю катку (Bo3)
   scheduled_at: string; // произвольный текст/дата
   note: string;
 }
