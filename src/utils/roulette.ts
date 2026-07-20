@@ -3,13 +3,13 @@
 //
 // 5 основных бонусов в колесе (1 отрицательный и 4 положительных):
 //   1. strong_neg  — отрицательный (теряет все деньги, ставку)
-//   2. normal      — обычный (x1.1)
-//   3. big         — большой (x1.5)
-//   4. super       — супер-бонус (x2.2)
-//   5. jackpot     — джекпот (x4.5)
+//   2. normal      — обычный (x1.25)
+//   3. big         — большой (x1.8)
+//   4. super       — супер-бонус (x2.5)
+//   5. jackpot     — джекпот (x5.0)
 // (weak_neg оставлен в справочнике для совместимости со старыми записями истории)
 //
-// Хорошие бонусы выпадают в сумме на 10% чаще, чем плохой (55% vs 45%).
+// Хорошие бонусы выпадают в сумме на 88% (против 12% плохого).
 // Плохой бонус только один, который сливает все поставленные деньги.
 //
 // Колесо синхронизировано с бонусами: порядок секторов на колесе, их
@@ -45,7 +45,7 @@ export const BONUSES: Record<BonusId, BonusDef> = {
     emoji: "💀",
     multiplier: -1.0, // теряет все поставленные деньги на спин
     isNegative: true,
-    baseWeight: 45, // 45% шанс (единственный плохой)
+    baseWeight: 12, // 12% шанс (единственный плохой)
     description: "Единственный отрицательный сектор: теряете все поставленные деньги на спин.",
   },
   weak_neg: {
@@ -66,53 +66,53 @@ export const BONUSES: Record<BonusId, BonusDef> = {
     id: "normal",
     order: 3,
     label: "⚫ Обычный бонус",
-    shortLabel: "⚫ x1.1",
+    shortLabel: "⚫ x1.25",
     color: "#27272a",
     textColor: "#e4e4e7",
     emoji: "⚫",
-    multiplier: 1.1, // возвращает ставку с небольшим плюсом
+    multiplier: 1.25, // возвращает ставку с небольшим плюсом
     isNegative: false,
-    baseWeight: 30, // 30% шанс
-    description: "Обычный бонус: возвращает ставку с плюсом (x1.1). При фри-спине даёт 50 NOD.",
+    baseWeight: 38, // 38% шанс
+    description: "Обычный бонус: возвращает ставку с плюсом (x1.25). При фри-спине даёт 50 NOD.",
   },
   big: {
     id: "big",
     order: 4,
     label: "🔴 Большой бонус",
-    shortLabel: "🔴 x1.5",
+    shortLabel: "🔴 x1.8",
     color: "#b91c1c",
     textColor: "#ffffff",
     emoji: "🔴",
-    multiplier: 1.5,
+    multiplier: 1.8,
     isNegative: false,
-    baseWeight: 14, // 14% шанс
-    description: "Большой бонус: множитель x1.5 к ставке.",
+    baseWeight: 22, // 22% шанс
+    description: "Большой бонус: множитель x1.8 к ставке.",
   },
   super: {
     id: "super",
     order: 5,
     label: "🟣 Супер-бонус",
-    shortLabel: "🟣 x2.2",
+    shortLabel: "🟣 x2.5",
     color: "#7e22ce",
     textColor: "#ffffff",
     emoji: "🟣",
-    multiplier: 2.2,
+    multiplier: 2.5,
     isNegative: false,
-    baseWeight: 8, // 8% шанс
-    description: "Супер-бонус: множитель x2.2 к ставке.",
+    baseWeight: 18, // 18% шанс
+    description: "Супер-бонус: множитель x2.5 к ставке.",
   },
   jackpot: {
     id: "jackpot",
     order: 6,
     label: "🟢 ДЖЕКПОТ",
-    shortLabel: "🟢 x4.5",
+    shortLabel: "🟢 x5.0",
     color: "#16a34a",
     textColor: "#ffffff",
     emoji: "🟢",
-    multiplier: 4.5,
+    multiplier: 5.0,
     isNegative: false,
-    baseWeight: 3, // 3% шанс
-    description: "Джекпот (самое редкое): множитель x4.5 к ставке. Чем выше ставка — тем больше куш.",
+    baseWeight: 10, // 10% шанс
+    description: "Джекпот (самое редкое): множитель x5.0 к ставке. Чем выше ставка — тем больше куш.",
   },
 };
 
@@ -203,12 +203,12 @@ export function computeSpinResult(bonusId: BonusId, betAmount: number): {
   // Фри-спин (пункт 8): за обычный бонус дается 50, остальные также щедро увеличены.
   if (betAmount <= 0) {
     const freeMap: Record<BonusId, number> = {
-      strong_neg: 10,
-      weak_neg: 25,
+      strong_neg: 0,
+      weak_neg: 0,
       normal: 50,   // ровно 50 за обычный бонус по требованию
       big: 100,
-      super: 200,
-      jackpot: 500,
+      super: 250,
+      jackpot: 600,
     };
     const won = freeMap[bonusId] ?? 50;
     return { delta: won, netWin: won };
