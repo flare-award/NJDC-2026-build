@@ -12,6 +12,24 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Инлайн-скрипт: перехватывает ссылки из писем Supabase (recovery, signup,
+      // magic_link), сохраняет токены в sessionStorage и перенаправляет на
+      // /reset-password, где React-страница обработает их.
+      // Это нужно, потому что HashRouter «съедает» хеш с токенами.
+      (function () {
+        var hash = window.location.hash || "";
+        if (
+          hash.indexOf("type=recovery") !== -1 ||
+          hash.indexOf("type=signup") !== -1 ||
+          hash.indexOf("type=magic_link") !== -1 ||
+          (hash.indexOf("access_token=") !== -1 && hash.indexOf("type=") !== -1)
+        ) {
+          sessionStorage.setItem("njdc_supabase_auth_hash", hash);
+          window.location.hash = "/reset-password";
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

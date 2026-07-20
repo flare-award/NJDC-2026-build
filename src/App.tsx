@@ -16,6 +16,7 @@ import MatchDetail from "./pages/MatchDetail";
 import Leaderboard from "./pages/Leaderboard";
 import AdminPage from "./pages/admin/AdminPage";
 import NodbetPage from "./pages/NodbetPage";
+import ResetPassword from "./pages/ResetPassword";
 
 function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="/matches" element={<SiteLayout><Matches /></SiteLayout>} />
                 <Route path="/matches/:id" element={<SiteLayout><MatchDetail /></SiteLayout>} />
                 <Route path="/leaderboard" element={<SiteLayout><Leaderboard /></SiteLayout>} />
+                <Route path="/reset-password" element={<SiteLayout><ResetPassword /></SiteLayout>} />
                 <Route
                   path="/nb-admin-9991"
                   element={

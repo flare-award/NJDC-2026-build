@@ -1,13 +1,23 @@
 import { useState } from "react";
-import { X, Mail, Lock, AlertCircle } from "lucide-react";
+import { X, Mail, Lock, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useUserAuth } from "../context/UserAuthContext";
 
 export default function AuthModal() {
-  const { authModalOpen, setAuthModalOpen, authMode, setAuthMode, signIn, signUp } = useUserAuth();
+  const {
+    authModalOpen,
+    setAuthModalOpen,
+    authMode,
+    setAuthMode,
+    signIn,
+    signUp,
+    sendResetPasswordEmail,
+  } = useUserAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Состояние «письмо для сброса пароля отправлено».
+  const [resetSent, setResetSent] = useState(false);
 
   if (!authModalOpen) return null;
 
@@ -30,6 +40,76 @@ export default function AuthModal() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Запросить письмо для сброса пароля
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      const res = await sendResetPasswordEmail(email);
+      if (res.ok) {
+        setResetSent(true);
+      } else {
+        setError(res.error || "Произошла ошибка");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Если письмо отправлено — показываем инструкцию вместо формы.
+  if (resetSent) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+        <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#121212] p-6 shadow-2xl sm:p-8">
+          <button
+            onClick={() => {
+              setAuthModalOpen(false);
+              setResetSent(false);
+              setEmail("");
+              setPassword("");
+            }}
+            className="absolute right-4 top-4 text-zinc-400 hover:text-white"
+            aria-label="Закрыть"
+          >
+            <X size={20} />
+          </button>
+
+          <div className="mb-6 flex items-center gap-3 border-b border-white/10 pb-4">
+            <CheckCircle2 size={24} className="text-green-400" />
+            <h3 className="font-display text-lg font-bold text-white">Письмо отправлено</h3>
+          </div>
+
+          <p className="mb-4 text-sm text-zinc-300">
+            На адрес <b className="text-fuchsia-300 break-all">{email}</b> отправлено письмо для
+            восстановления пароля.
+          </p>
+
+          <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
+            <b className="font-semibold">Важно:</b> откройте письмо и перейдите по ссылке. На
+            открывшейся странице задайте новый пароль. Письмо действительно некоторое время — если
+            ссылка не работает, запросите его повторно.
+          </div>
+
+          <button
+            onClick={() => {
+              setAuthModalOpen(false);
+              setResetSent(false);
+              setEmail("");
+              setPassword("");
+            }}
+            className="w-full rounded-xl bg-gradient-brand py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.01]"
+          >
+            Понятно
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -83,7 +163,9 @@ export default function AuthModal() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Email</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+              Email
+            </label>
             <div className="relative">
               <Mail className="absolute left-3.5 top-3 text-zinc-500" size={16} />
               <input
@@ -98,7 +180,9 @@ export default function AuthModal() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Пароль</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+              Пароль
+            </label>
             <div className="relative">
               <Lock className="absolute left-3.5 top-3 text-zinc-500" size={16} />
               <input
@@ -112,6 +196,23 @@ export default function AuthModal() {
               />
             </div>
           </div>
+
+          {authMode === "signin" && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!email.trim()) {
+                  setError("Введите email, чтобы восстановить пароль");
+                  return;
+                }
+                handleForgotPassword(e);
+              }}
+              className="text-xs text-fuchsia-400 hover:text-fuchsia-300 hover:underline"
+            >
+              Забыли пароль?
+            </button>
+          )}
 
           <button
             type="submit"
