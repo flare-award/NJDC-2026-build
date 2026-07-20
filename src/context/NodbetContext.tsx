@@ -17,8 +17,7 @@ import {
 import { normalizeMaps, mapWinner, mapPlayed, mapHadOvertime, maxMapCount, relevantMapCount } from "../utils/matchMaps";
 
 // ============================================================
-// Привилегии магазина (пункты 9, 17)
-// Всё ЧЕСТНОЕ, без читерских бустов голосов/страховок/удвоений.
+// Привилегии магазина
 // ============================================================
 export interface NodbetPerk {
   id: "radar" | "custom_status" | "double_spin" | "hall_frame" | "coin_magnet" | "crown_badge";
@@ -27,7 +26,7 @@ export interface NodbetPerk {
   cost: number;
   icon: string;
   badge: string;
-  oneTime: boolean; // покупается один раз навсегда
+  oneTime: boolean;
 }
 
 export const NODBET_PERKS: NodbetPerk[] = [
@@ -75,7 +74,7 @@ export const NODBET_PERKS: NodbetPerk[] = [
     id: "double_spin",
     name: "🎡 Дабл спин",
     description:
-      "Разблокирует режим двойного вращения рулетки: колесо крутится два раза подряд, и вы можете выбить два разных бонуса за один заход.",
+      "Разблокирует режим двойного вращения рулетки: колесо крутится два раза подряд, и вы можете выбить два разных бонуса за один заход. Можно включать/выключать в рулетке.",
     cost: 75_000_000,
     icon: "🎡",
     badge: "DOUBLE SPIN",
@@ -134,6 +133,7 @@ export interface HighRoller {
 interface NodbetInventory {
   radarUnlocked: boolean;
   doubleSpin: boolean;
+  doubleSpinEnabled: boolean; // можно выключить, если не хочется дабл
   hallFrame: boolean;
   customStatusOwned: boolean;
   coinMagnet: boolean;
@@ -161,6 +161,7 @@ interface NodbetProfileRow {
   last_daily_claim: string | null;
   radar_unlocked: boolean;
   double_spin: boolean;
+  double_spin_enabled?: boolean;
   hall_frame: boolean;
   custom_status_owned: boolean;
   coin_magnet: boolean;
@@ -188,6 +189,7 @@ export interface NodbetContextValue {
   hasCustomNickname: boolean;
   setProfileNickname: (raw: string) => Promise<{ ok: boolean; error?: string }>;
   setCustomStatus: (raw: string) => { ok: boolean; error?: string };
+  setDoubleSpinEnabled: (enabled: boolean) => void;
   placeBet: (
     matchId: string,
     mapIndex: number,
@@ -203,6 +205,8 @@ export interface NodbetContextValue {
   activatePromoCode: (code: string) => Promise<{ ok: boolean; error?: string }>;
   hasRadar: boolean;
   hasDoubleSpin: boolean;
+  doubleSpinEnabled: boolean;
+  doubleSpinActive: boolean;
 }
 
 const LOCAL_STORAGE_PREFIX = "njdc_nodbet_state_v3_";
@@ -215,6 +219,7 @@ function emptyInventory(): NodbetInventory {
   return {
     radarUnlocked: false,
     doubleSpin: false,
+    doubleSpinEnabled: true, // по умолчанию включен, если куплен
     hallFrame: false,
     customStatusOwned: false,
     coinMagnet: false,
@@ -237,6 +242,7 @@ function getInitialState(userId: string): NodbetState {
         inventory: {
           radarUnlocked: !!parsed.inventory?.radarUnlocked,
           doubleSpin: !!parsed.inventory?.doubleSpin,
+          doubleSpinEnabled: parsed.inventory?.doubleSpinEnabled !== false, // default true
           hallFrame: !!parsed.inventory?.hallFrame,
           customStatusOwned: !!parsed.inventory?.customStatusOwned,
           coinMagnet: !!parsed.inventory?.coinMagnet,
@@ -438,6 +444,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           last_daily_claim: local.lastDailyClaim,
           radar_unlocked: local.inventory.radarUnlocked,
           double_spin: local.inventory.doubleSpin,
+          double_spin_enabled: local.inventory.doubleSpinEnabled,
           hall_frame: local.inventory.hallFrame,
           custom_status_owned: local.inventory.customStatusOwned,
           coin_magnet: local.inventory.coinMagnet,
@@ -473,6 +480,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         inventory: {
           radarUnlocked: !!p.radar_unlocked,
           doubleSpin: !!p.double_spin,
+          doubleSpinEnabled: (p as any).double_spin_enabled !== false,
           hallFrame: !!p.hall_frame,
           customStatusOwned: !!p.custom_status_owned,
           coinMagnet: !!p.coin_magnet,
@@ -519,7 +527,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  // ---------- Разовая компенсация 250,000 NOD-Коинов за апдейт (пункт 2) ----------
+  // ---------- Разовая компенсация 250,000 NOD-Коинов ----------
   useEffect(() => {
     if (!state.inventory.compensationClaimed250k) {
       setState((prev) => {
@@ -606,6 +614,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
             last_daily_claim: snapshot.lastDailyClaim,
             radar_unlocked: snapshot.inventory.radarUnlocked,
             double_spin: snapshot.inventory.doubleSpin,
+            double_spin_enabled: snapshot.inventory.doubleSpinEnabled,
             hall_frame: snapshot.inventory.hallFrame,
             custom_status_owned: snapshot.inventory.customStatusOwned,
             coin_magnet: snapshot.inventory.coinMagnet,
@@ -645,7 +654,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [state, user]);
 
-  // ---------- Авто-расчёт ставок по завершённым матчам ----------
+  // ---------- Авто-расчёт ставок ----------
   useEffect(() => {
     setState((prev) => {
       let changed = false;
@@ -708,21 +717,95 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     return last.toDateString() !== now.toDateString();
   }, [state.lastDailyClaim]);
 
-  // ---------- Никнейм / статус ----------
+  // ---------- Никнейм / статус — ИСПРАВЛЕНО ----------
   const setProfileNickname = useCallback(
     async (raw: string) => {
-      const { valid, clean, error: vErr } = validateNickname(raw);
-      if (!valid || !clean) return { ok: false, error: vErr };
+      const result = validateNickname(raw);
+      if (!result.ok || !result.clean) {
+        return { ok: false, error: result.error || "Неверный никнейм" };
+      }
+      const clean = result.clean;
 
       if (isSupabaseConfigured && supabase && user) {
-        const { error } = await supabase.from("nodbet_profiles").upsert({ user_id: user.id, nickname: clean });
-        if (error) {
-          if (error.code === "23505" || /duplicate|unique/i.test(error.message)) {
+        // Пытаемся обновить существующий профиль
+        try {
+          // Сначала проверим, не занят ли ник кем-то другим (case-insensitive)
+          const { data: existing, error: checkErr } = await supabase
+            .from("nodbet_profiles")
+            .select("user_id")
+            .ilike("nickname", clean)
+            .neq("user_id", user.id)
+            .limit(1);
+          if (!checkErr && existing && existing.length > 0) {
             return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
           }
-          console.error("[NODBET] Ошибка сохранения никнейма", error);
-          return { ok: false, error: "Не удалось сохранить никнейм. Попробуйте ещё раз." };
+        } catch {
+          /* ignore check */
         }
+
+        // Обновляем профиль — используем update, а не upsert с 2 полями
+        const { error: updErr, count } = await supabase
+          .from("nodbet_profiles")
+          .update({ nickname: clean })
+          .eq("user_id", user.id)
+          .select("user_id");
+
+        // Если профиля ещё нет (count 0) — создаём через upsert с минимальными полями
+        if (updErr) {
+          if (updErr.code === "23505" || /duplicate|unique/i.test(updErr.message)) {
+            return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
+          }
+          // Попытка upsert как fallback
+          const { error: upsertErr } = await supabase.from("nodbet_profiles").upsert(
+            {
+              user_id: user.id,
+              nickname: clean,
+              balance: state.balance,
+              xp: state.xp,
+              radar_unlocked: state.inventory.radarUnlocked,
+              double_spin: state.inventory.doubleSpin,
+              double_spin_enabled: state.inventory.doubleSpinEnabled,
+              hall_frame: state.inventory.hallFrame,
+              custom_status_owned: state.inventory.customStatusOwned,
+              coin_magnet: state.inventory.coinMagnet,
+              crown_badge: state.inventory.crownBadge,
+              custom_status_text: state.inventory.customStatusText,
+            },
+            { onConflict: "user_id" }
+          );
+          if (upsertErr) {
+            if (upsertErr.code === "23505" || /duplicate|unique/i.test(upsertErr.message)) {
+              return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
+            }
+            console.error("[NODBET] Ошибка сохранения никнейма", upsertErr);
+            return { ok: false, error: "Не удалось сохранить никнейм. Попробуйте ещё раз." };
+          }
+        } else {
+          // Если update не затронул строк (профиля нет) — вставляем
+          // supabase v2 не возвращает count без select, поэтому проверим myProfile
+          if (!myProfile) {
+            const { error: insErr } = await supabase.from("nodbet_profiles").upsert({
+              user_id: user.id,
+              nickname: clean,
+              balance: state.balance,
+              xp: state.xp,
+              radar_unlocked: state.inventory.radarUnlocked,
+              double_spin: state.inventory.doubleSpin,
+              double_spin_enabled: state.inventory.doubleSpinEnabled,
+              hall_frame: state.inventory.hallFrame,
+              custom_status_owned: state.inventory.customStatusOwned,
+              coin_magnet: state.inventory.coinMagnet,
+              crown_badge: state.inventory.crownBadge,
+              custom_status_text: state.inventory.customStatusText,
+              total_won: state.balance,
+              bets_count: 0,
+            });
+            if (insErr && insErr.code === "23505") {
+              return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
+            }
+          }
+        }
+
         setProfiles((prev) => {
           const exists = prev.some((p) => p.user_id === user.id);
           if (exists) return prev.map((p) => (p.user_id === user.id ? { ...p, nickname: clean } : p));
@@ -736,12 +819,14 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
               last_daily_claim: state.lastDailyClaim,
               radar_unlocked: state.inventory.radarUnlocked,
               double_spin: state.inventory.doubleSpin,
+              double_spin_enabled: state.inventory.doubleSpinEnabled,
               hall_frame: state.inventory.hallFrame,
               custom_status_owned: state.inventory.customStatusOwned,
               coin_magnet: state.inventory.coinMagnet,
               crown_badge: state.inventory.crownBadge,
               custom_status_text: state.inventory.customStatusText,
               promo_used: state.inventory.promoUsed,
+              compensation_250k_claimed: state.inventory.compensationClaimed250k,
               total_won: 0,
               bets_count: 0,
             },
@@ -750,6 +835,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       }
 
+      // Локальный режим
       const taken = Object.entries(localNicknames).some(([id, n]) => id !== userId && n.toLowerCase() === clean.toLowerCase());
       if (taken) return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
       const next = { ...localNicknames, [userId]: clean };
@@ -757,7 +843,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       setLocalNicknames(next);
       return { ok: true };
     },
-    [user, state.balance, state.xp, state.lastDailyClaim, state.inventory, localNicknames, userId]
+    [user, myProfile, state.balance, state.xp, state.lastDailyClaim, state.inventory, localNicknames, userId]
   );
 
   const setCustomStatus = useCallback(
@@ -775,6 +861,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     [state.inventory.customStatusOwned]
   );
 
+  const setDoubleSpinEnabled = useCallback((enabled: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      inventory: { ...prev.inventory, doubleSpinEnabled: enabled },
+    }));
+  }, []);
+
   const claimDailyBonus = useCallback(() => {
     if (!dailyBonusAvailable) return { ok: false, error: "Вы уже забирали бонус сегодня. Приходите завтра!" };
     const reward = 500;
@@ -785,7 +878,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       lastDailyClaim: new Date().toISOString(),
     }));
     return { ok: true, reward };
-  }, [dailyBonusAvailable, state.inventory.coinMagnet]);
+  }, [dailyBonusAvailable]);
 
   const activatePromoCode = useCallback(
     async (rawCode: string) => {
@@ -832,9 +925,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: "Матч уже завершён или идёт в реальном времени. Ставка отклонена." };
       }
 
-      const duplicate = state.bets.some(
-        (b) => b.matchId === matchId && b.mapIndex === mapIndex && b.status === "pending"
-      );
+      const duplicate = state.bets.some((b) => b.matchId === matchId && b.mapIndex === mapIndex && b.status === "pending");
       if (duplicate) {
         return {
           ok: false,
@@ -842,7 +933,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      const totalMaps = maxMapCount(match.format);
       const baseA = Math.round((1.75 + (match.match_number % 3) * 0.13 + mapIndex * 0.05 + 0.25) * 100) / 100;
       const baseB = Math.round((2.05 - (match.match_number % 3) * 0.11 + mapIndex * 0.05 + 0.25) * 100) / 100;
       const odds = teamChoice === match.team_a ? baseA : baseB;
@@ -874,7 +964,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     [state.balance, state.bets, matches]
   );
 
-  // ---------- Рулетка: вычисление результатов БЕЗ мгновенного изменения баланса (пункты 2, 3) ----------
+  // ---------- Рулетка ----------
   const spinRoulette = useCallback(
     (betAmount: number) => {
       if (betAmount < 0 || isNaN(betAmount)) {
@@ -887,12 +977,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       const results: RouletteSpin[] = [];
       let workingStreak = state.streak;
 
-      const spinCount = state.inventory.doubleSpin ? 2 : 1;
+      const isDoubleActive = state.inventory.doubleSpin && state.inventory.doubleSpinEnabled;
+      const spinCount = isDoubleActive ? 2 : 1;
       if (betAmount * spinCount > state.balance) {
         return {
           ok: false,
           results: [],
-          error: `Дабл спин ставит ${betAmount.toLocaleString()} NOD дважды — не хватает баланса. Уменьшите ставку.`,
+          error: `Дабл спин ставит ${betAmount.toLocaleString()} NOD дважды — не хватает баланса. Уменьшите ставку или выключите дабл спин.`,
         };
       }
 
@@ -915,10 +1006,9 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
       return { ok: true, results };
     },
-    [state.balance, state.streak, state.inventory.doubleSpin]
+    [state.balance, state.streak, state.inventory.doubleSpin, state.inventory.doubleSpinEnabled]
   );
 
-  // Применение результатов вращения только ПОСЛЕ окончания анимации (пункт 3)
   const commitSpin = useCallback(
     (results: RouletteSpin[]) => {
       if (!results.length) return;
@@ -971,6 +1061,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           ...prev.inventory,
           radarUnlocked: perkId === "radar" ? true : prev.inventory.radarUnlocked,
           doubleSpin: perkId === "double_spin" ? true : prev.inventory.doubleSpin,
+          doubleSpinEnabled: perkId === "double_spin" ? true : prev.inventory.doubleSpinEnabled,
           hallFrame: perkId === "hall_frame" ? true : prev.inventory.hallFrame,
           crownBadge: perkId === "crown_badge" ? true : prev.inventory.crownBadge,
           customStatusOwned: perkId === "custom_status" ? true : prev.inventory.customStatusOwned,
@@ -985,7 +1076,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
   // ---------- Топ Хайроллеров ----------
   const highRollers = useMemo<HighRoller[]>(() => {
-    const totalWonOf = (bets: NodbetBet[], bal: number) =>
+    const totalWonOfLocal = (bets: NodbetBet[], bal: number) =>
       bets.filter((b) => b.status === "won").reduce((acc, b) => acc + b.payout, 0) + bal;
 
     if (isSupabaseConfigured) {
@@ -1006,7 +1097,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         id: user ? user.id : "current_user_hr",
         nickname: displayNickname,
         balance: state.balance,
-        totalWon: totalWonOf(state.bets, state.balance),
+        totalWon: totalWonOfLocal(state.bets, state.balance),
         betsCount: state.bets.length + state.rouletteHistory.length,
         level,
         customStatus: state.inventory.customStatusOwned ? state.inventory.customStatusText : null,
@@ -1021,7 +1112,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       return rows.sort((a, b) => b.balance - a.balance);
     }
 
-    // Локальный режим — демо-соперники.
     const list: HighRoller[] = [
       { id: "hr_1", nickname: "rezo1n", balance: 84_500_000, totalWon: 210_000_000, betsCount: 42, level: 640, crownBadge: true, hallFrame: true },
       { id: "hr_2", nickname: "dony_zq", balance: 67_200_000, totalWon: 185_000_000, betsCount: 38, level: 590, hallFrame: true },
@@ -1035,7 +1125,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       id: "current_user_hr",
       nickname: displayNickname,
       balance: state.balance,
-      totalWon: totalWonOf(state.bets, state.balance),
+      totalWon: totalWonOfLocal(state.bets, state.balance),
       betsCount: state.bets.length + state.rouletteHistory.length,
       level,
       customStatus: state.inventory.customStatusOwned ? state.inventory.customStatusText : null,
@@ -1064,6 +1154,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       hasCustomNickname,
       setProfileNickname,
       setCustomStatus,
+      setDoubleSpinEnabled,
       placeBet,
       spinRoulette,
       commitSpin,
@@ -1072,6 +1163,8 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       activatePromoCode,
       hasRadar: state.inventory.radarUnlocked,
       hasDoubleSpin: state.inventory.doubleSpin,
+      doubleSpinEnabled: state.inventory.doubleSpinEnabled,
+      doubleSpinActive: state.inventory.doubleSpin && state.inventory.doubleSpinEnabled,
     }),
     [
       state.balance,
@@ -1089,6 +1182,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       hasCustomNickname,
       setProfileNickname,
       setCustomStatus,
+      setDoubleSpinEnabled,
       placeBet,
       spinRoulette,
       commitSpin,

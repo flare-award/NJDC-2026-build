@@ -94,7 +94,7 @@ export default function NicknameModal({ open, onClose }: NicknameModalProps) {
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={displayNickname}
-              maxLength={30}
+              maxLength={24}
               autoFocus
               className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white placeholder-zinc-600 focus:border-yellow-400 focus:outline-none"
             />

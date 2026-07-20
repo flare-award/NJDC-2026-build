@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ExternalLink, TrendingUp, Lock, ShieldCheck, MapPin } from "lucide-react";
+import { ArrowLeft, ExternalLink, TrendingUp, Lock, ShieldCheck, MapPin, Link2 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { useUserAuth } from "../context/UserAuthContext";
 import { useNodbet } from "../context/NodbetContext";
@@ -43,6 +43,7 @@ export default function MatchDetail() {
   const votingLocked = match.status === "finished";
 
   const analytics = computeMatchAnalytics(match, teams, players);
+  const maps = normalizeMaps(match);
 
   async function handleVote(teamId: string | null) {
     if (!teamId || voting || votingLocked) return;
@@ -100,7 +101,7 @@ export default function MatchDetail() {
           </p>
           {maxMapCount(match.format) > 1 && match.status !== "upcoming" && (
             <div className="mt-2 flex flex-col items-center gap-0.5">
-              {normalizeMaps(match).slice(0, relevantMapCount(match)).map((mp, i) =>
+              {maps.slice(0, relevantMapCount(match)).map((mp, i) =>
                 mapPlayed(mp) ? (
                   <span key={i} className="text-[11px] font-mono text-zinc-400">
                     Карта {i + 1}: <b className="text-zinc-200">{mp.score_a}:{mp.score_b}</b>
@@ -123,18 +124,40 @@ export default function MatchDetail() {
         </Link>
       </div>
 
-      {match.cybershoke_url && (
-        <a
-          href={match.cybershoke_url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-white/15 py-3 text-sm font-semibold text-white transition-colors hover:border-transparent hover:bg-gradient-brand"
-        >
-          Открыть матч на CYBERSHOKE <ExternalLink size={16} />
-        </a>
+      {(match.cybershoke_url || maps.some((m) => !!m.cybershoke_url)) && (
+        <div className="mt-6 space-y-3">
+          {match.cybershoke_url && (
+            <a
+              href={match.cybershoke_url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/15 py-3 text-sm font-semibold text-white transition-colors hover:border-transparent hover:bg-gradient-brand"
+            >
+              Открыть матч на CYBERSHOKE <ExternalLink size={16} />
+            </a>
+          )}
+          {/* Если в Bo2/Bo3 есть отдельные ссылки на катки — покажем их */}
+          {maxMapCount(match.format) > 1 && maps.some((m) => !!m.cybershoke_url) && (
+            <div className="flex flex-wrap gap-2">
+              {maps.map((mp, i) =>
+                mp.cybershoke_url ? (
+                  <a
+                    key={i}
+                    href={mp.cybershoke_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#1a1a1a] border border-cyan-500/30 px-3 py-2 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/10"
+                  >
+                    <Link2 size={12} /> Карта {i + 1} на CYBERSHOKE <ExternalLink size={12} />
+                  </a>
+                ) : null
+              )}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* КАРТЫ (КАТКИ) МАТЧА Bo2 / Bo3 (пункт 10) */}
+      {/* КАРТЫ (КАТКИ) МАТЧА Bo2 / Bo3 */}
       {maxMapCount(match.format) > 1 && (
         <div className="mt-8 space-y-4">
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
@@ -147,143 +170,49 @@ export default function MatchDetail() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {/* Катка 1 — отображается всегда */}
-            {(() => {
-              const maps = normalizeMaps(match);
-              const mp1 = maps[0] || { score_a: 0, score_b: 0 };
-              const w1 = mapWinner(mp1);
-              const played1 = mapPlayed(mp1);
-              const ot1 = mapHadOvertime(mp1);
-              return (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 border-b border-white/5 pb-2">
-                      <span className="text-yellow-400">Карта 1 (Катка 1)</span>
-                      <span>{played1 ? "Сыграна" : match.status === "live" ? "Идёт (LIVE)" : "Ожидание"}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between my-3 font-display">
-                      <div className="flex items-center gap-2">
-                        <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={26} />
-                        <span className="font-bold text-white text-sm">{teamA?.name || "TBD"}</span>
-                      </div>
-                      <span className="text-xl font-black font-mono text-yellow-400">{mp1.score_a}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between my-3 font-display">
-                      <div className="flex items-center gap-2">
-                        <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={26} />
-                        <span className="font-bold text-white text-sm">{teamB?.name || "TBD"}</span>
-                      </div>
-                      <span className="text-xl font-black font-mono text-yellow-400">{mp1.score_b}</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
-                    {played1 && w1 ? (
-                      <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
-                        🏆 Победа: {w1 === "a" ? teamA?.name : teamB?.name}
-                      </span>
-                    ) : played1 ? (
-                      <span className="text-zinc-400">Ничья по раундам</span>
-                    ) : (
-                      <span className="text-zinc-500">Счёт ещё не открыт</span>
-                    )}
-                    {ot1 && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Катка 2 — отображается, только если первая катка/матч не в status === 'upcoming' */}
-            {(() => {
-              if (match.status === "upcoming") {
-                return (
-                  <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[190px]">
-                    <span className="text-2xl mb-2">🔒</span>
-                    <p className="font-bold text-zinc-400 text-sm">Карта 2 (Катка 2)</p>
-                    <p className="text-xs mt-1 text-zinc-600">Отобразится во время LIVE или после завершения 1-й катки.</p>
-                  </div>
-                );
-              }
-              const maps = normalizeMaps(match);
-              const mp2 = maps[1] || { score_a: 0, score_b: 0 };
-              const w2 = mapWinner(mp2);
-              const played2 = mapPlayed(mp2);
-              const ot2 = mapHadOvertime(mp2);
-              return (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 border-b border-white/5 pb-2">
-                      <span className="text-yellow-400">Карта 2 (Катка 2)</span>
-                      <span>{played2 ? "Сыграна" : match.status === "finished" ? "Не состоялась" : "В процессе / Скоро"}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between my-3 font-display">
-                      <div className="flex items-center gap-2">
-                        <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={26} />
-                        <span className="font-bold text-white text-sm">{teamA?.name || "TBD"}</span>
-                      </div>
-                      <span className="text-xl font-black font-mono text-yellow-400">{mp2.score_a}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between my-3 font-display">
-                      <div className="flex items-center gap-2">
-                        <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={26} />
-                        <span className="font-bold text-white text-sm">{teamB?.name || "TBD"}</span>
-                      </div>
-                      <span className="text-xl font-black font-mono text-yellow-400">{mp2.score_b}</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
-                    {played2 && w2 ? (
-                      <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
-                        🏆 Победа: {w2 === "a" ? teamA?.name : teamB?.name}
-                      </span>
-                    ) : played2 ? (
-                      <span className="text-zinc-400">Ничья по раундам</span>
-                    ) : (
-                      <span className="text-zinc-500">Счёт ещё не открыт</span>
-                    )}
-                    {ot2 && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Катка 3 — отображается ТОЛЬКО при Bo3, если потребовалась */}
-            {match.format === "bo3" && (() => {
-              if (match.status === "upcoming") {
-                return (
-                  <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[190px]">
-                    <span className="text-2xl mb-2">🔒</span>
-                    <p className="font-bold text-zinc-400 text-sm">Карта 3 (Катка 3)</p>
-                    <p className="text-xs mt-1 text-zinc-600">Отобразится, если потребуется (при счёте 1:1 по картам).</p>
-                  </div>
-                );
-              }
+            {maps.slice(0, maxMapCount(match.format)).map((mp, idx) => {
+              const isUpcoming = match.status === "upcoming";
+              const w = mapWinner(mp);
+              const played = mapPlayed(mp);
+              const ot = mapHadOvertime(mp);
+              const isBo3Third = match.format === "bo3" && idx === 2;
               const relCount = relevantMapCount(match);
-              if (relCount < 3 && match.status === "finished") {
+              const isBo3NotNeeded = match.format === "bo3" && idx === 2 && relCount < 3 && match.status === "finished";
+
+              if (isBo3NotNeeded) {
                 return (
-                  <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[190px]">
+                  <div key={idx} className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[220px]">
                     <span className="text-2xl mb-2">⚡</span>
-                    <p className="font-bold text-zinc-400 text-sm">Карта 3 (Катка 3)</p>
+                    <p className="font-bold text-zinc-400 text-sm">Карта {idx + 1} (Катка {idx + 1})</p>
                     <p className="text-xs mt-1 text-green-400/80 font-semibold">Не потребовалась — серия завершена (2:0 / 0:2)</p>
                   </div>
                 );
               }
-              const maps = normalizeMaps(match);
-              const mp3 = maps[2] || { score_a: 0, score_b: 0 };
-              const w3 = mapWinner(mp3);
-              const played3 = mapPlayed(mp3);
-              const ot3 = mapHadOvertime(mp3);
+
+              if (isUpcoming && idx > 0) {
+                return (
+                  <div key={idx} className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[220px]">
+                    <span className="text-2xl mb-2">🔒</span>
+                    <p className="font-bold text-zinc-400 text-sm">Карта {idx + 1} (Катка {idx + 1})</p>
+                    <p className="text-xs mt-1 text-zinc-600">
+                      {idx === 1 ? "Отобразится во время LIVE или после завершения 1-й катки." : "Отобразится, если потребуется (при счёте 1:1)."}
+                    </p>
+                  </div>
+                );
+              }
+
+              // Determine link for this map
+              const mapLink = mp.cybershoke_url || (idx === 0 ? match.cybershoke_url : "");
+
               return (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
+                <div key={idx} className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 border-b border-white/5 pb-2">
-                      <span className="text-yellow-400">Карта 3 (Катка 3)</span>
-                      <span>{played3 ? "Сыграна" : "В процессе / Скоро"}</span>
+                      <span className="text-yellow-400">Карта {idx + 1} (Катка {idx + 1})</span>
+                      <span>
+                        {played ? "Сыграна" : match.status === "live" ? "Идёт (LIVE)" : idx === 0 ? "Ожидание" : "Скоро"}
+                        {isBo3Third ? " · решающая" : ""}
+                      </span>
                     </div>
 
                     <div className="flex items-center justify-between my-3 font-display">
@@ -291,7 +220,7 @@ export default function MatchDetail() {
                         <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={26} />
                         <span className="font-bold text-white text-sm">{teamA?.name || "TBD"}</span>
                       </div>
-                      <span className="text-xl font-black font-mono text-yellow-400">{mp3.score_a}</span>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp.score_a}</span>
                     </div>
 
                     <div className="flex items-center justify-between my-3 font-display">
@@ -299,25 +228,37 @@ export default function MatchDetail() {
                         <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={26} />
                         <span className="font-bold text-white text-sm">{teamB?.name || "TBD"}</span>
                       </div>
-                      <span className="text-xl font-black font-mono text-yellow-400">{mp3.score_b}</span>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp.score_b}</span>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
-                    {played3 && w3 ? (
-                      <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
-                        🏆 Победа: {w3 === "a" ? teamA?.name : teamB?.name}
-                      </span>
-                    ) : played3 ? (
-                      <span className="text-zinc-400">Ничья по раундам</span>
-                    ) : (
-                      <span className="text-zinc-500">Решающая катка серии</span>
+                  <div className="mt-4 pt-3 border-t border-white/5 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      {played && w ? (
+                        <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
+                          🏆 Победа: {w === "a" ? teamA?.name : teamB?.name}
+                        </span>
+                      ) : played ? (
+                        <span className="text-zinc-400">Ничья по раундам</span>
+                      ) : (
+                        <span className="text-zinc-500">{idx === 0 ? "Счёт ещё не открыт" : "Счёт ещё не открыт"}</span>
+                      )}
+                      {ot && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
+                    </div>
+                    {mapLink && (
+                      <a
+                        href={mapLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#151515] border border-cyan-500/30 py-2 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-400"
+                      >
+                        <Link2 size={12} /> Открыть катку {idx + 1} на CYBERSHOKE <ExternalLink size={12} />
+                      </a>
                     )}
-                    {ot3 && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
                   </div>
                 </div>
               );
-            })()}
+            })}
           </div>
         </div>
       )}
@@ -376,7 +317,7 @@ export default function MatchDetail() {
         </div>
       )}
 
-      {/* NODBET AI RADAR — реальная аналитика по составам (пункт 9) */}
+      {/* NODBET AI RADAR */}
       {teamA && teamB && (
         <div className="mt-8 rounded-2xl border border-yellow-500/30 bg-[#151212] p-6 sm:p-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-yellow-500 via-red-600 to-yellow-500" />
@@ -461,9 +402,7 @@ export default function MatchDetail() {
                 <div className="rounded-xl bg-white/5 p-4 border border-white/10">
                   <span className="text-xs font-bold text-zinc-400 uppercase block mb-1">Фактор клатча</span>
                   <p className="text-[11px] text-zinc-300 leading-relaxed">
-                    Вероятность успешного клатча 1v2 у фаворита{" "}
-                    (<b className="text-white">{analytics.favoriteName}</b>) оценивается в{" "}
-                    <b className="text-yellow-300">{analytics.clutchPct}%</b>.
+                    Вероятность успешного клатча 1v2 у фаворита (<b className="text-white">{analytics.favoriteName}</b>) оценивается в <b className="text-yellow-300">{analytics.clutchPct}%</b>.
                   </p>
                 </div>
               </div>

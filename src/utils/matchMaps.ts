@@ -6,9 +6,8 @@ import type { Match, MatchFormat, MatchMap } from "../types";
 //  - Bo2: 2 карты (обе играются, возможна ничья 1:1)
 //  - Bo3: до 3 карт, но при счёте 2:0 третья не нужна
 //
-// score_a / score_b у матча = счёт СЕРИИ (сколько карт выиграно) —
-// именно это используют турнирная таблица и сетка. Мы его считаем
-// автоматически из карт, ничего не ломая.
+//  К каждой карте теперь можно прикрепить свою ссылку на CYBERSHOKE
+//  (для Bo2/Bo3 — отдельная на каждую катку).
 // ============================================================
 
 /** Максимальное число карт для формата. */
@@ -38,9 +37,8 @@ export function mapPlayed(map: MatchMap): boolean {
 
 /**
  * Нормализуем массив карт матча под его формат.
- * Если карт нет (старые данные) — синтезируем:
- *   - для bo1 берём score_a/score_b как раунды единственной карты;
- *   - для bo2/bo3 создаём пустые карты, чтобы админ мог их заполнить.
+ * Поддерживает cybershoke_url на каждую катку.
+ * Если в maps нет ссылок, пробует взять из cybershoke_url_2/_3 полей матча.
  */
 export function normalizeMaps(match: Match): MatchMap[] {
   const max = maxMapCount(match.format);
@@ -48,22 +46,36 @@ export function normalizeMaps(match: Match): MatchMap[] {
 
   if (src.length === 0 && match.format === "bo1") {
     // Старый bo1: единственная карта = серийный счёт (там он был в раундах).
-    return [{ score_a: match.score_a || 0, score_b: match.score_b || 0 }];
+    return [
+      {
+        score_a: match.score_a || 0,
+        score_b: match.score_b || 0,
+        cybershoke_url: (match.cybershoke_url || "").trim() || undefined,
+      },
+    ];
   }
 
   const out: MatchMap[] = [];
   for (let i = 0; i < max; i++) {
-    const m = src[i];
-    out.push({ score_a: m?.score_a ?? 0, score_b: m?.score_b ?? 0 });
+    const m = src[i] as any;
+    // fallback: если в карте нет ссылки, взять из общих полей
+    let fallbackUrl: string | undefined;
+    if (i === 0) fallbackUrl = (match.cybershoke_url || "").trim() || undefined;
+    else if (i === 1) fallbackUrl = (match as any).cybershoke_url_2?.trim() || (match.cybershoke_url || "").trim() || undefined;
+    else if (i === 2) fallbackUrl = (match as any).cybershoke_url_3?.trim() || undefined;
+
+    const urlFromMap = m?.cybershoke_url?.trim();
+    out.push({
+      score_a: m?.score_a ?? 0,
+      score_b: m?.score_b ?? 0,
+      cybershoke_url: urlFromMap ? urlFromMap : fallbackUrl,
+    });
   }
   return out;
 }
 
 /**
  * Сколько карт РЕАЛЬНО имеют значение в серии.
- *  - bo1: 1
- *  - bo2: 2 (обе всегда играются)
- *  - bo3: 3, но если после 2 карт счёт 2:0 — третья не нужна → 2
  */
 export function relevantMapCount(match: Match): number {
   const max = maxMapCount(match.format);
@@ -77,15 +89,11 @@ export function relevantMapCount(match: Match): number {
     if (w === "a") a++;
     else if (w === "b") b++;
   }
-  // Если кто-то уже взял 2 карты из первых двух — третья не нужна.
   if (a === 2 || b === 2) return 2;
   return 3;
 }
 
-/**
- * Счёт серии (карт выиграно). В bo3 останавливаемся, когда команда
- * набрала 2 карты — последующие карты не учитываем.
- */
+/** Счёт серии (карт выиграно). */
 export function seriesScore(match: Match): { a: number; b: number } {
   const maps = normalizeMaps(match);
   let a = 0;
@@ -101,21 +109,14 @@ export function seriesScore(match: Match): { a: number; b: number } {
   return { a, b };
 }
 
-/**
- * Пересчитываем серийный счёт (score_a/score_b) матча из карт.
- * Возвращаем НОВЫЙ объект матча с актуальными score_a/score_b и maps,
- * обрезанными до нужного количества карт.
- */
+/** Пересчитываем серийный счёт из карт. */
 export function withRecomputedSeries(match: Match): Match {
   const maps = normalizeMaps(match);
   const { a, b } = seriesScore({ ...match, maps });
   return { ...match, maps, score_a: a, score_b: b };
 }
 
-/**
- * Победитель всей серии по картам: team id или "draw".
- * Для ставок на исход всего матча.
- */
+/** Победитель всей серии по картам: team id или "draw". */
 export function seriesWinnerTeamId(match: Match): string | "draw" {
   const { a, b } = seriesScore(match);
   if (a > b) return match.team_a ?? "draw";
@@ -123,7 +124,6 @@ export function seriesWinnerTeamId(match: Match): string | "draw" {
   return "draw";
 }
 
-/** Человекочитаемая подпись карты для ставок/интерфейса. */
 export function mapLabel(index: number): string {
   return `Карта ${index + 1}`;
 }

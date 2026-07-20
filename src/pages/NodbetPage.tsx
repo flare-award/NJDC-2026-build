@@ -44,7 +44,10 @@ export default function NodbetPage() {
     claimDailyBonus,
     activatePromoCode,
     setCustomStatus,
+    setDoubleSpinEnabled,
     hasDoubleSpin,
+    doubleSpinEnabled,
+    doubleSpinActive,
   } = useNodbet();
 
   const { matches, teams } = useData();
@@ -487,8 +490,25 @@ export default function NodbetPage() {
                 </h2>
                 <p className="mt-1 text-xs text-zinc-400">
                   Честное колесо: можно и выиграть, и потерять. Чем выше ставка — тем крупнее и куш, и риск.
-                  {hasDoubleSpin && <b className="text-purple-300"> Дабл спин активен — колесо крутится дважды!</b>}
+                  {doubleSpinActive && <b className="text-purple-300"> Дабл спин ВКЛ — колесо крутится дважды!</b>}
+                  {hasDoubleSpin && !doubleSpinActive && <b className="text-zinc-500"> Дабл спин выключен (включите тумблер ниже).</b>}
                 </p>
+
+                {hasDoubleSpin && (
+                  <div className="mt-3 flex items-center justify-center gap-3 rounded-xl bg-purple-500/10 border border-purple-500/30 px-4 py-2.5">
+                    <span className="text-xs font-bold text-purple-300">🎡 Дабл спин:</span>
+                    <button
+                      onClick={() => setDoubleSpinEnabled(!doubleSpinEnabled)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${doubleSpinEnabled ? "bg-purple-600" : "bg-zinc-700"}`}
+                      title={doubleSpinEnabled ? "Выключить дабл спин" : "Включить дабл спин"}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${doubleSpinEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                    </button>
+                    <span className={`text-xs font-black ${doubleSpinEnabled ? "text-purple-300" : "text-zinc-500"}`}>
+                      {doubleSpinEnabled ? "ВКЛ (x2)" : "ВЫКЛ (x1)"}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* WHEEL */}
@@ -537,8 +557,8 @@ export default function NodbetPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-zinc-400">
                   <span>Выберите ставку на спин</span>
                   <span className="text-yellow-400 font-mono">
-                    К списанию: {effectiveSpinAmount > 0 ? `${(effectiveSpinAmount * (hasDoubleSpin ? 2 : 1)).toLocaleString()} NOD` : "ФРИ-СПИН (0 NOD)"}
-                    {hasDoubleSpin && effectiveSpinAmount > 0 ? " (x2 спина)" : ""}
+                    К списанию: {effectiveSpinAmount > 0 ? `${(effectiveSpinAmount * (doubleSpinActive ? 2 : 1)).toLocaleString()} NOD` : "ФРИ-СПИН (0 NOD)"}
+                    {doubleSpinActive && effectiveSpinAmount > 0 ? " (x2 спина)" : ""}
                   </span>
                 </div>
 
@@ -675,10 +695,11 @@ export default function NodbetPage() {
                   })}
                 </div>
                 <div className="mt-4 p-3.5 rounded-2xl bg-yellow-500/10 border border-yellow-500/30 text-xs text-zinc-300 space-y-1">
-                  <p className="font-bold text-yellow-400">⚖️ Как работает честная рулетка:</p>
-                  <p>1. Шансы секторов строго соответствуют их площади на колесе (хорошие сектора в сумме выпадают в 88% случаев, плохой в 12%).</p>
-                  <p>2. Единственный отрицательный сектор забирает ставку на текущий спин.</p>
-                  <p>3. На бесплатном вращении (Фри-спине) вы не рискуете ничем, обычный бонус сразу даёт 50 NOD.</p>
+                  <p className="font-bold text-yellow-400">⚖️ Как работает честная рулетка (исправлено):</p>
+                  <p>1. Шансы строго 12% 💀 / 38% ⚫ / 22% 🔴 / 18% 🟣 / 10% 🟢 — как написано, без подкрутки.</p>
+                  <p>2. Пример на ставке 5000 NOD: ⚫ x1.25 → возврат 6250 (прибыль +1250), 🔴 x1.8 → 9000 (+4000), 🟣 x2.5 → 12500 (+7500), 🟢 x5.0 → 25000 (+20000).</p>
+                  <p>3. 💀 забирает всю ставку на спин. На фри-спине (0 NOD) даёт 50/100/250/600 без риска.</p>
+                  <p>4. Дабл спин можно включать/выключать тумблером выше, если куплен в магазине.</p>
                 </div>
               </div>
             </div>

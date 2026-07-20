@@ -7,7 +7,7 @@ import { Link, useLocation } from "react-router-dom";
 //  - меняются между собой каждые 25 секунд
 //  - слева и справа показывают РАЗНЫЕ баннеры (со сдвигом)
 //  - видны только на: Главная, Команды, Турнирная сетка, Матчи, Таблица лидеров
-//  - отступ от краев небольшой, увеличены в 1.2 раза (w-[204px]).
+//  - QEnergy: фото энергетика увеличено в 1.45 раза (max-h 348px, min-h 320px, scale 1.45)
 // ============================================================
 
 const ROTATE_MS = 25000;
@@ -43,8 +43,15 @@ function QEnergyBanner({ tick }: { tick: number }) {
         </div>
       </div>
 
-      <div className="relative z-10 flex flex-1 items-center justify-center overflow-hidden my-2 min-h-[220px]">
-        <img key={drink.img} src={drink.img} alt={`QEnergy ${drink.name}`} className="h-full max-h-[240px] w-auto object-contain drop-shadow-[0_0_18px_rgba(37,227,201,0.35)] animate-banner-swap" loading="lazy" />
+      <div className="relative z-10 flex flex-1 items-center justify-center overflow-hidden my-3 min-h-[320px]">
+        <img
+          key={drink.img}
+          src={drink.img}
+          alt={`QEnergy ${drink.name}`}
+          className="h-full max-h-[348px] w-auto object-contain drop-shadow-[0_0_22px_rgba(37,227,201,0.45)] animate-banner-swap"
+          style={{ transform: "scale(1.45)", transformOrigin: "center" }}
+          loading="lazy"
+        />
       </div>
 
       <div className="relative z-10 mt-1 text-center">
@@ -139,23 +146,23 @@ export default function SideBanners() {
 
   return (
     <>
-      {/* Левый баннер — от края небольшой отступ (left-3 = 12px), увеличен в 1.2 раза (w-[204px], max-h-[670px]) */}
+      {/* Левый баннер — увеличен фото энергетика в 1.45 раза */}
       <aside className="pointer-events-none fixed left-3 top-24 bottom-6 z-30 hidden w-[204px] 2xl:block">
-        <div className="pointer-events-auto h-full max-h-[670px]">
+        <div className="pointer-events-auto h-full max-h-[720px]">
           <SponsorBanner key={`l-${leftSponsor}-${tick}`} sponsor={leftSponsor} tick={tick} />
         </div>
       </aside>
 
-      {/* Правый баннер — от края небольшой отступ (right-3 = 12px), увеличен в 1.2 раза (w-[204px], max-h-[670px]) */}
+      {/* Правый баннер — увеличен фото энергетика в 1.45 раза */}
       <aside className="pointer-events-none fixed right-3 top-24 bottom-6 z-30 hidden w-[204px] 2xl:block">
-        <div className="pointer-events-auto h-full max-h-[670px]">
+        <div className="pointer-events-auto h-full max-h-[720px]">
           <SponsorBanner key={`r-${rightSponsor}-${tick}`} sponsor={rightSponsor} tick={tick} />
         </div>
       </aside>
 
-      {/* Мобильная версия: один компактный баннер снизу */}
+      {/* Мобильная версия */}
       <div className="fixed inset-x-2 bottom-2 z-30 mx-auto max-w-md md:hidden">
-        <div className="h-[132px] animate-banner-swap" key={`m-${mobileSponsor}-${tick}`}>
+        <div className="h-[142px] animate-banner-swap" key={`m-${mobileSponsor}-${tick}`}>
           <SponsorBanner sponsor={mobileSponsor} tick={tick} />
         </div>
       </div>
