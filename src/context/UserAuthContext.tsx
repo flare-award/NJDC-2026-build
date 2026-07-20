@@ -16,6 +16,8 @@ interface UserAuthContextValue {
   signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signUp: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => Promise<void>;
+  // Сброс пароля: отправка письма со ссылкой для восстановления
+  sendResetPasswordEmail: (email: string) => Promise<{ ok: boolean; error?: string }>;
   // Плашка подтверждения почты после регистрации (пункт 10)
   emailConfirmPrompt: { email: string } | null;
   dismissEmailConfirmPrompt: () => void;
@@ -152,6 +154,35 @@ export function UserAuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  // Отправка письма для сброса пароля.
+  // Письмо содержит ссылку, по которой пользователь задаёт новый пароль
+  // на отдельной странице /reset-password.
+  const sendResetPasswordEmail = useCallback(async (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      return { ok: false, error: "Введите email" };
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      // redirectTo — куда Supabase перенаправит пользователя после перехода по
+      // ссылке из письма. Указываем корень сайта; токены придут в хеше.
+      const redirectTo = typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined;
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo,
+      });
+      if (error) {
+        return { ok: false, error: error.message || "Ошибка отправки письма" };
+      }
+      return { ok: true };
+    } else {
+      // Локальный режим без Supabase — сброс пароля недоступен.
+      return {
+        ok: false,
+        error: "Сброс пароля доступен только при подключённом Supabase.",
+      };
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -163,10 +194,11 @@ export function UserAuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
+      sendResetPasswordEmail,
       emailConfirmPrompt,
       dismissEmailConfirmPrompt,
     }),
-    [user, loading, authModalOpen, authMode, signIn, signUp, signOut, emailConfirmPrompt, dismissEmailConfirmPrompt]
+    [user, loading, authModalOpen, authMode, signIn, signUp, signOut, sendResetPasswordEmail, emailConfirmPrompt, dismissEmailConfirmPrompt]
   );
 
   return <UserAuthContext.Provider value={value}>{children}</UserAuthContext.Provider>;
