@@ -138,13 +138,14 @@ export default function NodbetPage() {
   const resolvedBets = useMemo(() => bets.filter((b) => b.status !== "pending"), [bets]);
 
   const handleDailyBonus = () => {
-    const { ok, error, reward } = claimDailyBonus();
-    if (!ok) {
-      setBetErrorToast(error || "Бонус пока недоступен");
+    const res = claimDailyBonus();
+    if (!res.ok) {
+      setBetErrorToast(res.error || "Бонус пока недоступен");
       setTimeout(() => setBetErrorToast(null), 3000);
     } else {
       playSound("jackpot");
-      setBonusToast(`🎁 Вы получили ежедневный бонус +${reward?.toLocaleString()} NOD!`);
+      const reward = (res as any).reward ?? 500;
+      setBonusToast(`🎁 Вы получили ежедневный бонус +${reward.toLocaleString()} NOD!`);
       setTimeout(() => setBonusToast(null), 4000);
     }
   };
@@ -191,16 +192,29 @@ export default function NodbetPage() {
       return;
     }
 
-    // Колесо останавливается на секторе ПЕРВОГО результата (синхронизация, пункт 2).
+    // === ЖЁСТКАЯ ГАРАНТИЯ: колесо останавливается ТОЧНО на правильном секторе ===
+    // Результат уже известен (results[0].bonusId). Мы крутим колесо К НЕМУ.
     const first = results[0];
-    const sector = wheelSectors.find((s) => s.id === first.bonusId);
-    // Находим точный угол, чтобы середина сектора (midDeg) после поворота стала 0deg сверху под стрелкой.
-    const targetRem = sector ? (360 - sector.midDeg) % 360 : 0;
-    const currentRem = spinRotation % 360;
-    let diff = targetRem - currentRem;
-    if (diff <= 0) diff += 360;
-    const fullSpins = 360 * (5 + Math.floor(Math.random() * 3));
-    const nextAngle = spinRotation + fullSpins + diff;
+    let targetSector = wheelSectors.find((s) => s.id === first.bonusId);
+
+    // Fallback: если вдруг не нашли (должно быть невозможно), берём первый
+    if (!targetSector && wheelSectors.length > 0) {
+      targetSector = wheelSectors[0];
+    }
+
+    const currentMod = ((spinRotation % 360) + 360) % 360;
+    const targetMid = targetSector ? targetSector.midDeg : 180;
+
+    // Точный поворот, чтобы СЕРЕДИНА нужного сектора оказалась ровно под стрелкой (верх)
+    const needed = (360 - targetMid) % 360;
+    let diff = (needed - currentMod + 360) % 360;
+
+    // 5-8 полных оборотов + крошечный jitter внутри сектора (чтобы не было подозрительно идеально)
+    const fullSpins = 360 * (5 + Math.floor(Math.random() * 4));
+    const sectorSize = targetSector ? targetSector.sizeDeg : 36;
+    const jitter = (Math.random() - 0.5) * Math.min(sectorSize * 0.35, 12);
+
+    const nextAngle = spinRotation + fullSpins + diff + jitter;
     setSpinRotation(nextAngle);
 
     const tickInterval = setInterval(() => playSound("tick"), 180);
