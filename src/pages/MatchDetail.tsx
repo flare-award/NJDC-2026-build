@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ExternalLink, TrendingUp, Lock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ExternalLink, TrendingUp, Lock, ShieldCheck, MapPin } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { useUserAuth } from "../context/UserAuthContext";
 import { useNodbet } from "../context/NodbetContext";
@@ -9,7 +9,7 @@ import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
 import { computeOdds } from "../utils/odds";
 import { computeMatchAnalytics } from "../utils/analytics";
-import { normalizeMaps, mapPlayed, mapHadOvertime, maxMapCount, relevantMapCount } from "../utils/matchMaps";
+import { normalizeMaps, mapPlayed, mapHadOvertime, mapWinner, maxMapCount, relevantMapCount } from "../utils/matchMaps";
 
 export default function MatchDetail() {
   const { id } = useParams();
@@ -37,13 +37,11 @@ export default function MatchDetail() {
   const rosterA = players.filter((p) => p.team_id === match.team_a);
   const rosterB = players.filter((p) => p.team_id === match.team_b);
 
-  // Пункт 3: голоса считаются честно, БЕЗ VIP-бустеров (1 человек = 1 голос).
   const votesA = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_a).length;
   const votesB = votes.filter((v) => v.match_id === match.id && v.team_choice === match.team_b).length;
   const odds = computeOdds(votesA, votesB);
   const votingLocked = match.status === "finished";
 
-  // Пункт 9: реальная аналитика по статистике составов.
   const analytics = computeMatchAnalytics(match, teams, players);
 
   async function handleVote(teamId: string | null) {
@@ -136,6 +134,194 @@ export default function MatchDetail() {
         </a>
       )}
 
+      {/* КАРТЫ (КАТКИ) МАТЧА Bo2 / Bo3 (пункт 10) */}
+      {maxMapCount(match.format) > 1 && (
+        <div className="mt-8 space-y-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
+              <MapPin className="text-yellow-400" size={20} /> Катки матча ({match.format.toUpperCase()})
+            </h2>
+            <span className="text-xs text-zinc-400">
+              {match.format === "bo2" ? "Формат Bo2 (две катки)" : "Формат Bo3 (серия до двух побед)"}
+            </span>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Катка 1 — отображается всегда */}
+            {(() => {
+              const maps = normalizeMaps(match);
+              const mp1 = maps[0] || { score_a: 0, score_b: 0 };
+              const w1 = mapWinner(mp1);
+              const played1 = mapPlayed(mp1);
+              const ot1 = mapHadOvertime(mp1);
+              return (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 border-b border-white/5 pb-2">
+                      <span className="text-yellow-400">Карта 1 (Катка 1)</span>
+                      <span>{played1 ? "Сыграна" : match.status === "live" ? "Идёт (LIVE)" : "Ожидание"}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between my-3 font-display">
+                      <div className="flex items-center gap-2">
+                        <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={26} />
+                        <span className="font-bold text-white text-sm">{teamA?.name || "TBD"}</span>
+                      </div>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp1.score_a}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between my-3 font-display">
+                      <div className="flex items-center gap-2">
+                        <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={26} />
+                        <span className="font-bold text-white text-sm">{teamB?.name || "TBD"}</span>
+                      </div>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp1.score_b}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                    {played1 && w1 ? (
+                      <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
+                        🏆 Победа: {w1 === "a" ? teamA?.name : teamB?.name}
+                      </span>
+                    ) : played1 ? (
+                      <span className="text-zinc-400">Ничья по раундам</span>
+                    ) : (
+                      <span className="text-zinc-500">Счёт ещё не открыт</span>
+                    )}
+                    {ot1 && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Катка 2 — отображается, только если первая катка/матч не в status === 'upcoming' */}
+            {(() => {
+              if (match.status === "upcoming") {
+                return (
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[190px]">
+                    <span className="text-2xl mb-2">🔒</span>
+                    <p className="font-bold text-zinc-400 text-sm">Карта 2 (Катка 2)</p>
+                    <p className="text-xs mt-1 text-zinc-600">Отобразится во время LIVE или после завершения 1-й катки.</p>
+                  </div>
+                );
+              }
+              const maps = normalizeMaps(match);
+              const mp2 = maps[1] || { score_a: 0, score_b: 0 };
+              const w2 = mapWinner(mp2);
+              const played2 = mapPlayed(mp2);
+              const ot2 = mapHadOvertime(mp2);
+              return (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 border-b border-white/5 pb-2">
+                      <span className="text-yellow-400">Карта 2 (Катка 2)</span>
+                      <span>{played2 ? "Сыграна" : match.status === "finished" ? "Не состоялась" : "В процессе / Скоро"}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between my-3 font-display">
+                      <div className="flex items-center gap-2">
+                        <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={26} />
+                        <span className="font-bold text-white text-sm">{teamA?.name || "TBD"}</span>
+                      </div>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp2.score_a}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between my-3 font-display">
+                      <div className="flex items-center gap-2">
+                        <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={26} />
+                        <span className="font-bold text-white text-sm">{teamB?.name || "TBD"}</span>
+                      </div>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp2.score_b}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                    {played2 && w2 ? (
+                      <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
+                        🏆 Победа: {w2 === "a" ? teamA?.name : teamB?.name}
+                      </span>
+                    ) : played2 ? (
+                      <span className="text-zinc-400">Ничья по раундам</span>
+                    ) : (
+                      <span className="text-zinc-500">Счёт ещё не открыт</span>
+                    )}
+                    {ot2 && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Катка 3 — отображается ТОЛЬКО при Bo3, если потребовалась */}
+            {match.format === "bo3" && (() => {
+              if (match.status === "upcoming") {
+                return (
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[190px]">
+                    <span className="text-2xl mb-2">🔒</span>
+                    <p className="font-bold text-zinc-400 text-sm">Карта 3 (Катка 3)</p>
+                    <p className="text-xs mt-1 text-zinc-600">Отобразится, если потребуется (при счёте 1:1 по картам).</p>
+                  </div>
+                );
+              }
+              const relCount = relevantMapCount(match);
+              if (relCount < 3 && match.status === "finished") {
+                return (
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-center items-center text-center text-zinc-500 min-h-[190px]">
+                    <span className="text-2xl mb-2">⚡</span>
+                    <p className="font-bold text-zinc-400 text-sm">Карта 3 (Катка 3)</p>
+                    <p className="text-xs mt-1 text-green-400/80 font-semibold">Не потребовалась — серия завершена (2:0 / 0:2)</p>
+                  </div>
+                );
+              }
+              const maps = normalizeMaps(match);
+              const mp3 = maps[2] || { score_a: 0, score_b: 0 };
+              const w3 = mapWinner(mp3);
+              const played3 = mapPlayed(mp3);
+              const ot3 = mapHadOvertime(mp3);
+              return (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 border-b border-white/5 pb-2">
+                      <span className="text-yellow-400">Карта 3 (Катка 3)</span>
+                      <span>{played3 ? "Сыграна" : "В процессе / Скоро"}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between my-3 font-display">
+                      <div className="flex items-center gap-2">
+                        <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={26} />
+                        <span className="font-bold text-white text-sm">{teamA?.name || "TBD"}</span>
+                      </div>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp3.score_a}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between my-3 font-display">
+                      <div className="flex items-center gap-2">
+                        <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={26} />
+                        <span className="font-bold text-white text-sm">{teamB?.name || "TBD"}</span>
+                      </div>
+                      <span className="text-xl font-black font-mono text-yellow-400">{mp3.score_b}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                    {played3 && w3 ? (
+                      <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
+                        🏆 Победа: {w3 === "a" ? teamA?.name : teamB?.name}
+                      </span>
+                    ) : played3 ? (
+                      <span className="text-zinc-400">Ничья по раундам</span>
+                    ) : (
+                      <span className="text-zinc-500">Решающая катка серии</span>
+                    )}
+                    {ot3 && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* ROSTERS */}
       <div className="mt-12 grid gap-6 md:grid-cols-2">
         <RosterTable teamName={teamA?.name ?? "TBD"} roster={rosterA} />
@@ -214,7 +400,7 @@ export default function MatchDetail() {
                 onClick={() => buyPerk("radar")}
                 className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 px-4 py-2 text-xs font-black text-black hover:opacity-90 active:scale-95 cursor-pointer"
               >
-                Разблокировать за 2,500,000 NOD
+                Разблокировать за 1,800,000 NOD
               </button>
             )}
           </div>
