@@ -119,9 +119,14 @@ alter table nodbet_profiles add column if not exists custom_status_text text;
 alter table nodbet_profiles alter column xp set default 0;
 
 -- ---------------------------------------------------------
--- 5. Прогноз овертайма в ставках (пункт 6).
+-- 5. Прогноз овертайма в ставках + ставки по картам (пункт 6, Bo2/Bo3).
 -- ---------------------------------------------------------
 alter table nodbet_bets add column if not exists overtime_prediction boolean not null default false;
+-- Индекс карты, на которую сделана ставка (0 = первая карта / вся серия для Bo1).
+alter table nodbet_bets add column if not exists map_index int not null default 0;
+
+-- Карты матча (счёт по картам в раундах) для Bo1/Bo2/Bo3.
+alter table matches add column if not exists maps jsonb not null default '[]'::jsonb;
 
 -- ---------------------------------------------------------
 -- 6. Обновление таблицы спинов рулетки под новую систему бонусов

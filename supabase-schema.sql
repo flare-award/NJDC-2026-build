@@ -39,6 +39,7 @@ create table if not exists matches (
   team_b text references teams(id) on delete set null,
   score_a int not null default 0,
   score_b int not null default 0,
+  maps jsonb not null default '[]'::jsonb,   -- счёт по картам в раундах: [{"score_a":16,"score_b":14}, ...]
   status text not null default 'upcoming',
   cybershoke_url text not null default '',
   scheduled_at text not null default '',

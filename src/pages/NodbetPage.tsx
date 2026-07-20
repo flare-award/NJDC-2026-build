@@ -18,6 +18,7 @@ import {
 import { useNodbet, NODBET_PERKS, buildWheelSectors, type NodbetPerk, type RouletteSpin } from "../context/NodbetContext";
 import { useData } from "../context/DataContext";
 import { BONUS_ORDER, BONUSES, wheelGradient } from "../utils/roulette";
+import { maxMapCount } from "../utils/matchMaps";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
@@ -61,6 +62,7 @@ export default function NodbetPage() {
 
   // Bet slip state
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [selectedMapIndex, setSelectedMapIndex] = useState<number>(0);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [selectedTeamName, setSelectedTeamName] = useState<string>("");
   const [betAmountInput, setBetAmountInput] = useState<number>(1000);
@@ -205,8 +207,9 @@ export default function NodbetPage() {
     }, 3200);
   };
 
-  const handleSelectBetOutcome = (matchId: string, teamId: string, teamName: string) => {
+  const handleSelectBetOutcome = (matchId: string, mapIndex: number, teamId: string, teamName: string) => {
     setSelectedMatchId(matchId);
+    setSelectedMapIndex(mapIndex);
     setSelectedTeamId(teamId);
     setSelectedTeamName(teamName);
     setOvertimePick(null);
@@ -218,11 +221,11 @@ export default function NodbetPage() {
   const handlePlaceBetSubmit = () => {
     if (!selectedMatchId || !selectedTeamId) return;
     if (overtimePick === null) {
-      setBetErrorToast("Сделайте прогноз: будет ли овертайм? Это обязательная часть ставки.");
+      setBetErrorToast("Сделайте прогноз: будет ли овертайм на этой карте? Это обязательная часть ставки.");
       setTimeout(() => setBetErrorToast(null), 4000);
       return;
     }
-    const { ok, error } = placeBet(selectedMatchId, selectedTeamId, selectedTeamName, betAmountInput, overtimePick);
+    const { ok, error } = placeBet(selectedMatchId, selectedMapIndex, selectedTeamId, selectedTeamName, betAmountInput, overtimePick);
     if (!ok) {
       setBetErrorToast(error || "Не удалось принять ставку");
       setTimeout(() => setBetErrorToast(null), 4000);
@@ -230,7 +233,7 @@ export default function NodbetPage() {
     }
     playSound("bet");
     setBetSuccessToast(
-      `🔥 Ставка на ${selectedTeamName} (${betAmountInput.toLocaleString()} NOD, овертайм: ${overtimePick ? "будет" : "не будет"}) принята!`
+      `🔥 Ставка на ${selectedTeamName} (Карта ${selectedMapIndex + 1}, ${betAmountInput.toLocaleString()} NOD, овертайм: ${overtimePick ? "будет" : "не будет"}) принята!`
     );
     setTimeout(() => setBetSuccessToast(null), 4000);
     setOvertimePick(null);
@@ -267,13 +270,13 @@ export default function NodbetPage() {
   const selectedMatch = matches.find((m) => m.id === selectedMatchId);
   const selectedOdds = useMemo(() => {
     if (!selectedMatch || !selectedTeamId) return 1.9;
-    const oddsA = Math.round((1.75 + (selectedMatch.match_number % 3) * 0.13) * 100) / 100;
-    const oddsB = Math.round((2.05 - (selectedMatch.match_number % 3) * 0.11) * 100) / 100;
+    const oddsA = Math.round((1.75 + (selectedMatch.match_number % 3) * 0.13 + selectedMapIndex * 0.05) * 100) / 100;
+    const oddsB = Math.round((2.05 - (selectedMatch.match_number % 3) * 0.11 + selectedMapIndex * 0.05) * 100) / 100;
     let o = 1.9;
     if (selectedTeamId === selectedMatch.team_a) o = oddsA;
     else if (selectedTeamId === selectedMatch.team_b) o = oddsB;
     return Math.round((o + 0.25) * 100) / 100;
-  }, [selectedMatch, selectedTeamId]);
+  }, [selectedMatch, selectedTeamId, selectedMapIndex]);
 
   return (
     <div className="min-h-screen pb-20">
@@ -753,8 +756,7 @@ export default function NodbetPage() {
                 const teamA = teams.find((t) => t.id === m.team_a);
                 const teamB = teams.find((t) => t.id === m.team_b);
                 const isUpcoming = m.status === "upcoming";
-                const oddsA = Math.round((1.75 + (m.match_number % 3) * 0.13 + 0.25) * 100) / 100;
-                const oddsB = Math.round((2.05 - (m.match_number % 3) * 0.11 + 0.25) * 100) / 100;
+                const totalMaps = maxMapCount(m.format);
 
                 return (
                   <div
@@ -796,27 +798,55 @@ export default function NodbetPage() {
                       </div>
                     </div>
 
-                    {/* Пункт 5: кнопки ставок только для upcoming */}
+                    {/* Пункт 5: ставки только для upcoming. По каждой карте — своя линия (Bo2/Bo3). */}
                     {isUpcoming ? (
-                      <div className="mt-4 grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
-                        <button
-                          onClick={() => handleSelectBetOutcome(m.id, teamA?.id || "teamA", teamA?.name || "Команда А")}
-                          className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                            selectedMatchId === m.id && selectedTeamId === teamA?.id ? "bg-red-600 text-white shadow" : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
-                          }`}
-                        >
-                          <span>Победа {teamA?.name || "П1"}</span>
-                          <span className="font-mono font-black text-yellow-400 text-sm">{oddsA}</span>
-                        </button>
-                        <button
-                          onClick={() => handleSelectBetOutcome(m.id, teamB?.id || "teamB", teamB?.name || "Команда Б")}
-                          className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                            selectedMatchId === m.id && selectedTeamId === teamB?.id ? "bg-red-600 text-white shadow" : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
-                          }`}
-                        >
-                          <span>Победа {teamB?.name || "П2"}</span>
-                          <span className="font-mono font-black text-yellow-400 text-sm">{oddsB}</span>
-                        </button>
+                      <div className="mt-4 space-y-3 pt-3 border-t border-white/5">
+                        {Array.from({ length: totalMaps }).map((_, mapIdx) => {
+                          const oddsA = Math.round((1.75 + (m.match_number % 3) * 0.13 + mapIdx * 0.05 + 0.25) * 100) / 100;
+                          const oddsB = Math.round((2.05 - (m.match_number % 3) * 0.11 + mapIdx * 0.05 + 0.25) * 100) / 100;
+                          const alreadyBet = bets.some((b) => b.matchId === m.id && b.mapIndex === mapIdx && b.status === "pending");
+                          return (
+                            <div key={mapIdx}>
+                              {totalMaps > 1 && (
+                                <div className="mb-1.5 flex items-center gap-2">
+                                  <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-300">
+                                    Карта {mapIdx + 1}
+                                  </span>
+                                  {alreadyBet && <span className="text-[10px] font-bold text-green-400">✓ ставка сделана</span>}
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-3">
+                                <button
+                                  onClick={() => handleSelectBetOutcome(m.id, mapIdx, teamA?.id || "teamA", teamA?.name || "Команда А")}
+                                  className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                                    selectedMatchId === m.id && selectedMapIndex === mapIdx && selectedTeamId === teamA?.id
+                                      ? "bg-red-600 text-white shadow"
+                                      : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
+                                  }`}
+                                >
+                                  <span>Победа {teamA?.name || "П1"}</span>
+                                  <span className="font-mono font-black text-yellow-400 text-sm">{oddsA}</span>
+                                </button>
+                                <button
+                                  onClick={() => handleSelectBetOutcome(m.id, mapIdx, teamB?.id || "teamB", teamB?.name || "Команда Б")}
+                                  className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                                    selectedMatchId === m.id && selectedMapIndex === mapIdx && selectedTeamId === teamB?.id
+                                      ? "bg-red-600 text-white shadow"
+                                      : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
+                                  }`}
+                                >
+                                  <span>Победа {teamB?.name || "П2"}</span>
+                                  <span className="font-mono font-black text-yellow-400 text-sm">{oddsB}</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {m.format === "bo3" && (
+                          <p className="text-[11px] text-zinc-500">
+                            В Bo3 третья карта играется только при счёте 1:1. Если она не состоится — ставка на неё вернётся.
+                          </p>
+                        )}
                       </div>
                     ) : m.status === "live" ? (
                       <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
@@ -866,7 +896,12 @@ export default function NodbetPage() {
                 ) : (
                   <div className="mt-5 space-y-5">
                     <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
-                      <span className="block text-xs font-semibold text-zinc-400 uppercase">{selectedMatch?.title}</span>
+                      <span className="block text-xs font-semibold text-zinc-400 uppercase">
+                        {selectedMatch?.title}
+                        {selectedMatch && maxMapCount(selectedMatch.format) > 1 && (
+                          <span className="ml-1 text-yellow-400">· Карта {selectedMapIndex + 1}</span>
+                        )}
+                      </span>
                       <div className="mt-1 flex items-center justify-between">
                         <span className="font-display font-bold text-white text-base">
                           Победа: <span className="text-yellow-400">{selectedTeamName}</span>
@@ -878,7 +913,7 @@ export default function NodbetPage() {
                     {/* Пункт 6: обязательный прогноз овертайма */}
                     <div>
                       <label className="block text-xs font-semibold uppercase text-zinc-400 mb-2">
-                        Будет ли овертайм? <span className="text-red-400">*</span>
+                        Будет ли овертайм на этой карте? <span className="text-red-400">*</span>
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
@@ -1065,7 +1100,7 @@ export default function NodbetPage() {
                   <div key={bet.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#141414] p-5 transition-all hover:border-white/20">
                     <div>
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-xs font-semibold text-zinc-400">{bet.matchTitle}</span>
+                        <span className="text-xs font-semibold text-zinc-400">{bet.matchTitle} · Карта {bet.mapIndex + 1}</span>
                         <span className={`rounded px-2 py-0.5 text-[10px] font-bold border ${bet.overtimePrediction ? "bg-green-500/20 text-green-300 border-green-500/30" : "bg-zinc-700/40 text-zinc-300 border-white/10"}`}>
                           Овертайм: {bet.overtimePrediction ? "будет" : "не будет"}
                         </span>

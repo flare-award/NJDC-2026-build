@@ -14,7 +14,7 @@ import {
   type BonusId,
   type StreakMap,
 } from "../utils/roulette";
-import { hadOvertime } from "../utils/matchStats";
+import { normalizeMaps, mapWinner, mapPlayed, mapHadOvertime, maxMapCount, relevantMapCount } from "../utils/matchMaps";
 
 // ============================================================
 // Привилегии магазина (пункт 17)
@@ -88,11 +88,12 @@ export interface NodbetBet {
   id: string;
   matchId: string;
   matchTitle: string;
+  mapIndex: number; // на какую карту матча сделана ставка (Bo2/Bo3)
   teamChoice: string; // team id
   teamName: string;
   amount: number;
   odds: number;
-  overtimePrediction: boolean; // прогноз игрока: будет ли овертайм (пункт 6)
+  overtimePrediction: boolean; // прогноз игрока: будет ли овертайм на карте (пункт 6)
   status: "pending" | "won" | "lost" | "refunded";
   createdAt: string;
   payout: number;
@@ -176,6 +177,7 @@ export interface NodbetContextValue {
   // Actions
   placeBet: (
     matchId: string,
+    mapIndex: number,
     teamChoice: string,
     teamName: string,
     amount: number,
@@ -272,6 +274,7 @@ function betFromRow(row: Record<string, unknown>): NodbetBet {
     id: String(row.id),
     matchId: String(row.match_id ?? ""),
     matchTitle: String(row.match_title ?? ""),
+    mapIndex: Number(row.map_index) || 0,
     teamChoice: String(row.team_choice ?? ""),
     teamName: String(row.team_name ?? ""),
     amount: Number(row.amount) || 0,
@@ -289,6 +292,7 @@ function betToRow(userId: string, b: NodbetBet) {
     id: b.id,
     match_id: b.matchId,
     match_title: b.matchTitle,
+    map_index: b.mapIndex,
     team_choice: b.teamChoice,
     team_name: b.teamName,
     amount: b.amount,
@@ -576,18 +580,46 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       const nextBets = prev.bets.map((bet: NodbetBet) => {
         if (bet.status !== "pending") return bet;
         const match = matches.find((m) => m.id === bet.matchId);
-        if (!match || match.status !== "finished") return bet;
+        if (!match) return bet;
+
+        // Ставка привязана к конкретной карте (Bo2/Bo3).
+        const maps = normalizeMaps(match);
+        const map = maps[bet.mapIndex];
+        if (!map) return bet;
+
+        // В Bo3 третья карта может не понадобиться (при 2:0). Если так —
+        // ставки на неё возвращаем (карта не состоится).
+        if (bet.mapIndex >= relevantMapCount(match)) {
+          if (match.status === "finished") {
+            changed = true;
+            addedBalance += bet.amount;
+            return { ...bet, status: "refunded" as const, payout: bet.amount };
+          }
+          return bet;
+        }
+
+        // Ждём, пока карта сыграна. Матч необязательно должен быть finished:
+        // в Bo2/Bo3 карта 1 может завершиться раньше конца серии.
+        const played = mapPlayed(map);
+        if (!played) {
+          // Если весь матч завершён, а карта так и не сыграна — возвращаем ставку.
+          if (match.status === "finished") {
+            changed = true;
+            addedBalance += bet.amount;
+            return { ...bet, status: "refunded" as const, payout: bet.amount };
+          }
+          return bet;
+        }
 
         changed = true;
-        const winnerTeamId =
-          match.score_a > match.score_b ? match.team_a : match.score_b > match.score_a ? match.team_b : "draw";
+        const w = mapWinner(map); // 'a' | 'b' | null
+        const winnerTeamId = w === "a" ? match.team_a : w === "b" ? match.team_b : "draw";
 
-        // Пункт 6: прогноз овертайма — обязательная часть ставки.
-        const overtimeActual = hadOvertime(match.score_a, match.score_b);
+        // Пункт 6: прогноз овертайма — по конкретной карте.
+        const overtimeActual = mapHadOvertime(map);
         const overtimeCorrect = bet.overtimePrediction === overtimeActual;
 
-        if (winnerTeamId === "draw") {
-          // Ничья — возврат ставки.
+        if (winnerTeamId === "draw" || !winnerTeamId) {
           addedBalance += bet.amount;
           return { ...bet, status: "refunded" as const, payout: bet.amount };
         }
@@ -596,14 +628,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
         // Ставка выигрывает ТОЛЬКО если верно и команда, и прогноз овертайма (пункт 6).
         if (teamCorrect && overtimeCorrect) {
-          // Пункт 7: честный расчёт выплаты = ставка * коэффициент, без страховок/удвоений.
+          // Пункт 7: честный расчёт выплаты = ставка * коэффициент.
           const payout = Math.round(bet.amount * bet.odds);
           addedBalance += payout;
           addedXp += 300;
           return { ...bet, status: "won" as const, payout };
         }
 
-        // Иначе ставка сгорает (неверная команда ИЛИ неверный овертайм).
         addedXp += 100;
         return { ...bet, status: "lost" as const, payout: 0 };
       });
@@ -719,7 +750,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   // ---------- Ставки (пункты 2, 5, 6, 7) ----------
 
   const placeBet = useCallback(
-    (matchId: string, teamChoice: string, teamName: string, amount: number, overtimePrediction: boolean) => {
+    (matchId: string, mapIndex: number, teamChoice: string, teamName: string, amount: number, overtimePrediction: boolean) => {
       if (amount <= 0 || isNaN(amount)) {
         return { ok: false, error: "Введите корректную сумму ставки" };
       }
@@ -733,9 +764,18 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       if (match.status === "finished") return { ok: false, error: "Матч уже завершён!" };
       if (match.status === "live") return { ok: false, error: "Матч уже идёт (LIVE) — ставки закрыты! Ставить можно только до начала матча." };
 
-      // Коэффициент считаем от силы составов (стабильный, честный).
-      const oddsA = Math.round((1.75 + (match.match_number % 3) * 0.13) * 100) / 100;
-      const oddsB = Math.round((2.05 - (match.match_number % 3) * 0.11) * 100) / 100;
+      const totalMaps = maxMapCount(match.format);
+      if (mapIndex < 0 || mapIndex >= totalMaps) {
+        return { ok: false, error: "Некорректная карта матча" };
+      }
+
+      // Нельзя дважды ставить на одну и ту же карту одного матча.
+      const dup = state.bets.some((b) => b.matchId === matchId && b.mapIndex === mapIndex && b.status === "pending");
+      if (dup) return { ok: false, error: `У вас уже есть ставка на Карту ${mapIndex + 1} этого матча.` };
+
+      // Коэффициент считаем от силы составов (стабильный, честный), + вариация по карте.
+      const oddsA = Math.round((1.75 + (match.match_number % 3) * 0.13 + mapIndex * 0.05) * 100) / 100;
+      const oddsB = Math.round((2.05 - (match.match_number % 3) * 0.11 + mapIndex * 0.05) * 100) / 100;
       let chosenOdds = 1.9;
       if (teamChoice === match.team_a) chosenOdds = oddsA;
       else if (teamChoice === match.team_b) chosenOdds = oddsB;
@@ -746,6 +786,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         id: "bet_" + crypto.randomUUID().slice(0, 8),
         matchId,
         matchTitle: match.title,
+        mapIndex,
         teamChoice,
         teamName,
         amount,
@@ -765,7 +806,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
       return { ok: true };
     },
-    [state.balance, matches]
+    [state.balance, state.bets, matches]
   );
 
   // ---------- Рулетка (пункты 1, 8, 18, 20) ----------

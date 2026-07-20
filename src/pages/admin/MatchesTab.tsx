@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Plus, Trash2, RotateCcw } from "lucide-react";
 import { useData } from "../../context/DataContext";
-import type { Match, MatchFormat, MatchStatus } from "../../types";
+import type { Match, MatchFormat, MatchStatus, MatchMap } from "../../types";
 import { inputClass, labelClass, btnPrimary, btnGhost, btnDanger } from "./adminStyles";
 import { STAGE_LABELS } from "../../utils/scoring";
+import { maxMapCount, normalizeMaps, withRecomputedSeries, mapHadOvertime, mapWinner } from "../../utils/matchMaps";
 
 function emptyMatch(): Match {
   return {
@@ -16,6 +17,7 @@ function emptyMatch(): Match {
     team_b: null,
     score_a: 0,
     score_b: 0,
+    maps: [{ score_a: 0, score_b: 0 }],
     status: "upcoming",
     cybershoke_url: "",
     scheduled_at: "",
@@ -35,11 +37,33 @@ export default function MatchesTab() {
     if (!draft) return;
     setSaving(true);
     try {
-      await upsertMatch(draft);
+      // Пересчитываем счёт серии (карт выиграно) из карт — для таблицы/сетки.
+      await upsertMatch(withRecomputedSeries(draft));
       setDraft(null);
     } finally {
       setSaving(false);
     }
+  }
+
+  // Открываем матч на редактирование с нормализованными картами.
+  function editMatch(m: Match) {
+    setDraft({ ...m, maps: normalizeMaps(m) });
+  }
+
+  // Меняем формат — подгоняем число карт.
+  function changeFormat(format: MatchFormat) {
+    if (!draft) return;
+    const max = maxMapCount(format);
+    const current = normalizeMaps({ ...draft, format });
+    const maps: MatchMap[] = [];
+    for (let i = 0; i < max; i++) maps.push(current[i] ?? { score_a: 0, score_b: 0 });
+    setDraft({ ...draft, format, maps });
+  }
+
+  function updateMap(index: number, patch: Partial<MatchMap>) {
+    if (!draft) return;
+    const maps = normalizeMaps(draft).map((mp, i) => (i === index ? { ...mp, ...patch } : mp));
+    setDraft({ ...draft, maps });
   }
 
   return (
@@ -80,7 +104,7 @@ export default function MatchesTab() {
                   >
                     <RotateCcw size={14} />
                   </button>
-                  <button className={btnGhost} onClick={() => setDraft(m)}>
+                  <button className={btnGhost} onClick={() => editMatch(m)}>
                     Изменить
                   </button>
                   <button
@@ -126,7 +150,7 @@ export default function MatchesTab() {
             </div>
             <div>
               <label className={labelClass}>Формат</label>
-              <select className={inputClass} value={draft.format} onChange={(e) => setDraft({ ...draft, format: e.target.value as MatchFormat })}>
+              <select className={inputClass} value={draft.format} onChange={(e) => changeFormat(e.target.value as MatchFormat)}>
                 {FORMATS.map((f) => (
                   <option key={f} value={f}>
                     {f.toUpperCase()}
@@ -178,23 +202,50 @@ export default function MatchesTab() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className={labelClass}>Счёт A (карт/побед)</label>
-              <input
-                type="number"
-                className={inputClass}
-                value={draft.score_a}
-                onChange={(e) => setDraft({ ...draft, score_a: Number(e.target.value) })}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Счёт B (карт/побед)</label>
-              <input
-                type="number"
-                className={inputClass}
-                value={draft.score_b}
-                onChange={(e) => setDraft({ ...draft, score_b: Number(e.target.value) })}
-              />
+            {/* Счёт по картам (в раундах). Bo1 — 1 карта, Bo2 — 2, Bo3 — до 3. */}
+            <div className="sm:col-span-3">
+              <label className={labelClass}>
+                Счёт по картам (в раундах) — {draft.format.toUpperCase()} ·{" "}
+                {maxMapCount(draft.format)} {maxMapCount(draft.format) === 1 ? "карта" : maxMapCount(draft.format) === 2 ? "карты" : "до 3 карт"}
+              </label>
+              <div className="mt-1 space-y-2">
+                {normalizeMaps(draft).map((mp, i) => {
+                  const w = mapWinner(mp);
+                  const ot = mapHadOvertime(mp);
+                  const isBo3Third = draft.format === "bo3" && i === 2;
+                  return (
+                    <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
+                      <span className="w-16 text-xs font-semibold text-zinc-400">Карта {i + 1}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        className={`${inputClass} w-20`}
+                        value={mp.score_a}
+                        onChange={(e) => updateMap(i, { score_a: Math.max(0, Number(e.target.value)) })}
+                        title="Раунды команды A"
+                      />
+                      <span className="text-zinc-500">:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        className={`${inputClass} w-20`}
+                        value={mp.score_b}
+                        onChange={(e) => updateMap(i, { score_b: Math.max(0, Number(e.target.value)) })}
+                        title="Раунды команды B"
+                      />
+                      <span className="text-[11px] text-zinc-500">
+                        {w ? `Победа ${w === "a" ? "A" : "B"}` : "не сыграна"}
+                        {ot ? " · ОВЕРТАЙМ" : ""}
+                        {isBo3Third ? " · нужна только при счёте 1:1" : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                Овертайм определяется автоматически: если у команды больше 13 раундов на карте (например 16:14). Счёт серии
+                (карт выиграно) для таблицы и сетки считается сам.
+              </p>
             </div>
             <div className="sm:col-span-3">
               <label className={labelClass}>Ссылка на матч CYBERSHOKE</label>

@@ -151,53 +151,54 @@ export default function Sponsors() {
             </button>
           </div>
         </div>
-        {/* ==================== 3. QENERGY ==================== */}
-        <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0a1f16] via-[#0d0d0d] to-[#1a0a1f] p-6 sm:p-8 text-white shadow-xl shadow-emerald-950/30 transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl hover:shadow-emerald-500/20 border border-emerald-400/30 flex flex-col justify-between">
-          <div className="absolute -right-10 -bottom-10 h-60 w-60 rounded-full bg-emerald-400/15 blur-3xl pointer-events-none" />
-          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-400 via-purple-400 to-red-500" />
+        {/* ==================== 3. QENERGY (стиль LIT ENERGY) ==================== */}
+        <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#05201d] via-[#0a0f10] to-black p-6 sm:p-8 text-white shadow-xl shadow-[#25e3c9]/10 transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl hover:shadow-[#25e3c9]/20 border border-[#25e3c9]/40 flex flex-col justify-between">
+          <div className="absolute -right-10 -top-10 h-60 w-60 rounded-full bg-[#25e3c9]/20 blur-3xl pointer-events-none" />
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-[#25e3c9] via-white to-[#25e3c9]" />
 
           <div>
             <div className="flex items-center justify-between mb-4">
-              <span className="inline-flex items-center gap-1.5 rounded bg-emerald-950/80 px-2.5 py-1 font-display text-xs font-black tracking-widest text-emerald-300 uppercase backdrop-blur-sm border border-emerald-400/30">
-                <Zap size={14} className="text-emerald-400" />
-                ЭНЕРГЕТИКИ
+              <span className="inline-flex items-center gap-1.5 rounded bg-[#25e3c9] px-2.5 py-1 font-display text-xs font-black tracking-widest text-black uppercase shadow">
+                <Zap size={14} className="text-black fill-black" />
+                QEnergy
               </span>
-              <span className="text-[10px] font-mono font-bold tracking-widest text-emerald-300/80 bg-black/30 px-2 py-0.5 rounded border border-emerald-500/20">
-                ОТ QUSTI
+              <span className="text-[10px] font-mono font-bold tracking-widest text-[#25e3c9]/80 bg-black/40 px-2 py-0.5 rounded border border-[#25e3c9]/20">
+                ЭНЕРГЕТИК · 18+
               </span>
             </div>
 
+            {/* слоган в стиле референса */}
             <div className="my-2">
-              <h3 className="font-display text-5xl sm:text-6xl font-black italic tracking-wider uppercase drop-shadow-md transform -skew-x-6">
-                Q<span className="text-emerald-400">Energy</span>
+              <h3 className="font-display text-4xl sm:text-5xl font-black italic tracking-tight uppercase leading-[0.9] drop-shadow-md">
+                #ЗАГОРАЙСЯ<br />И <span className="text-[#25e3c9]">ПОБЕЖДАЙ</span>
               </h3>
-              <p className="mt-1 text-xs font-bold tracking-widest text-emerald-200/90 uppercase">
-                Заряжай свои клатчи энергией
-              </p>
+              <div className="mt-3 inline-block -rotate-1 rounded bg-black px-3 py-1">
+                <p className="text-xs font-bold text-[#25e3c9]">Энергетик от @qusti</p>
+              </div>
             </div>
 
             {/* Три напитка */}
-            <div className="mt-6 grid grid-cols-3 gap-2">
+            <div className="mt-5 grid grid-cols-3 gap-2">
               {[
                 { img: "/sponsors/qenergy-chkoda.png", name: "«Чкода»", flavor: "Кола" },
                 { img: "/sponsors/qenergy-bmvnograd.png", name: "«БМВноград»", flavor: "Виноград" },
                 { img: "/sponsors/qenergy-lada-granata.png", name: "«Лада Граната»", flavor: "Гранат" },
               ].map((d) => (
-                <div key={d.name} className="rounded-xl bg-black/30 border border-white/10 p-2 text-center">
-                  <img src={d.img} alt={`QEnergy ${d.name}`} className="mx-auto h-24 w-auto object-contain" loading="lazy" />
+                <div key={d.name} className="rounded-xl bg-black/40 border border-[#25e3c9]/20 p-2 text-center">
+                  <img src={d.img} alt={`QEnergy ${d.name}`} className="mx-auto h-24 w-auto object-contain drop-shadow-[0_0_12px_rgba(37,227,201,0.3)]" loading="lazy" />
                   <p className="mt-1 text-[11px] font-bold text-white leading-tight">{d.name}</p>
-                  <p className="text-[10px] text-emerald-300">{d.flavor}</p>
+                  <p className="text-[10px] text-[#25e3c9]">{d.flavor}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="mt-8 flex items-center justify-between pt-4 border-t border-emerald-500/20">
-            <div className="text-xs font-bold text-emerald-300">
-              Три новых вкуса · <span className="text-white">попробуй все!</span>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-purple-500 px-4 py-2.5 text-sm font-black text-slate-950 uppercase tracking-wider">
-              QEnergy
+          <div className="mt-6 flex items-center justify-between gap-3 pt-4 border-t border-[#25e3c9]/20">
+            <p className="text-[10px] leading-tight text-zinc-500">
+              Напиток не рекомендуется детям до 18 лет, беременным и лицам с повышенной нервной возбудимостью.
+            </p>
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#25e3c9] px-4 py-2.5 text-sm font-black text-black uppercase tracking-wider">
+              Три вкуса
             </span>
           </div>
         </div>

@@ -9,6 +9,7 @@ import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
 import { computeOdds } from "../utils/odds";
 import { computeMatchAnalytics } from "../utils/analytics";
+import { normalizeMaps, mapPlayed, mapHadOvertime, maxMapCount, relevantMapCount } from "../utils/matchMaps";
 
 export default function MatchDetail() {
   const { id } = useParams();
@@ -99,6 +100,22 @@ export default function MatchDetail() {
           <p className="font-display text-5xl font-bold text-white sm:text-6xl">
             {match.status === "upcoming" ? "VS" : `${match.score_a} : ${match.score_b}`}
           </p>
+          {maxMapCount(match.format) > 1 && match.status !== "upcoming" && (
+            <div className="mt-2 flex flex-col items-center gap-0.5">
+              {normalizeMaps(match).slice(0, relevantMapCount(match)).map((mp, i) =>
+                mapPlayed(mp) ? (
+                  <span key={i} className="text-[11px] font-mono text-zinc-400">
+                    Карта {i + 1}: <b className="text-zinc-200">{mp.score_a}:{mp.score_b}</b>
+                    {mapHadOvertime(mp) && <span className="ml-1 text-yellow-400">ОТ</span>}
+                  </span>
+                ) : (
+                  <span key={i} className="text-[11px] font-mono text-zinc-600">
+                    Карта {i + 1}: —
+                  </span>
+                )
+              )}
+            </div>
+          )}
           {match.scheduled_at && <p className="mt-2 text-xs text-zinc-500">{match.scheduled_at}</p>}
         </div>
         <Link to={`/teams/${teamB?.id}`} className="flex flex-col items-center gap-3 text-center">

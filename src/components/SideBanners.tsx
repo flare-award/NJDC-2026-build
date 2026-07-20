@@ -25,30 +25,47 @@ interface QDrink {
 }
 
 const Q_DRINKS: QDrink[] = [
-  { name: "QEnergy «Чкода»", flavor: "Вкус Колы", img: "/sponsors/qenergy-chkoda.png" },
-  { name: "QEnergy «БМВноград»", flavor: "Вкус Винограда", img: "/sponsors/qenergy-bmvnograd.png" },
-  { name: "QEnergy «Лада Граната»", flavor: "Вкус Граната", img: "/sponsors/qenergy-lada-granata.png" },
+  { name: "«Чкода»", flavor: "Вкус Колы", img: "/sponsors/qenergy-chkoda.png" },
+  { name: "«БМВноград»", flavor: "Вкус Винограда", img: "/sponsors/qenergy-bmvnograd.png" },
+  { name: "«Лада Граната»", flavor: "Вкус Граната", img: "/sponsors/qenergy-lada-granata.png" },
 ];
 
 const SPONSOR_ORDER: SponsorKey[] = ["qenergy", "nodbet", "1dony"];
 
+// Оформлен в стиле референса LIT ENERGY: бирюза + чёрный, бренд в плашке,
+// крупный курсивный слоган с хэштегом, «Энергетик от @...» и 18+ снизу.
 function QEnergyBanner({ tick }: { tick: number }) {
   const drink = Q_DRINKS[tick % Q_DRINKS.length];
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-gradient-to-b from-[#0a1f16] via-[#0d0d0d] to-[#1a0a1f] p-3 text-white shadow-xl">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="rounded bg-emerald-500/20 px-2 py-0.5 font-display text-[10px] font-black uppercase tracking-widest text-emerald-300 border border-emerald-400/30">
+    <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-[#25e3c9]/40 bg-gradient-to-b from-[#05201d] via-[#0a0f10] to-black p-3 text-white shadow-xl">
+      {/* фоновое свечение */}
+      <div className="pointer-events-none absolute -right-8 top-6 h-40 w-40 rounded-full bg-[#25e3c9]/20 blur-3xl" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#25e3c9] via-white to-[#25e3c9]" />
+
+      {/* бренд в плашке */}
+      <div className="relative z-10 mb-1 flex items-center justify-between">
+        <span className="rounded bg-[#25e3c9] px-2 py-0.5 font-display text-[11px] font-black uppercase tracking-widest text-black shadow">
           QEnergy
         </span>
-        <span className="text-[9px] font-mono uppercase text-zinc-500">Реклама</span>
+        <span className="text-[9px] font-mono uppercase text-zinc-500">18+ Реклама</span>
       </div>
-      <div className="flex flex-1 items-center justify-center overflow-hidden rounded-xl bg-black/40">
-        <img key={drink.img} src={drink.img} alt={drink.name} className="h-full max-h-[260px] w-auto object-contain animate-banner-swap" loading="lazy" />
+
+      {/* банка */}
+      <div className="relative z-10 flex flex-1 items-center justify-center overflow-hidden">
+        <img key={drink.img} src={drink.img} alt={`QEnergy ${drink.name}`} className="h-full max-h-[230px] w-auto object-contain drop-shadow-[0_0_18px_rgba(37,227,201,0.35)] animate-banner-swap" loading="lazy" />
       </div>
-      <div className="mt-2 text-center">
-        <p className="font-display text-sm font-black leading-tight text-white">{drink.name}</p>
-        <p className="text-[11px] font-semibold text-emerald-300">{drink.flavor}</p>
-        <p className="mt-1 text-[10px] text-zinc-400">Энергетики от Qusti — заряжай клатчи!</p>
+
+      {/* слоган-хэштег в стиле референса */}
+      <div className="relative z-10 mt-1">
+        <p className="font-display text-lg font-black italic uppercase leading-none tracking-tight text-white drop-shadow">
+          #ЗАГОРАЙСЯ<br />И ПОБЕЖДАЙ
+        </p>
+        <div className="mt-1 inline-block -rotate-1 rounded bg-black px-2 py-0.5">
+          <p className="text-[10px] font-bold text-[#25e3c9]">Энергетик от @qusti</p>
+        </div>
+        <p className="mt-1 font-display text-sm font-black leading-tight text-white">
+          {drink.name} <span className="text-[#25e3c9]">· {drink.flavor}</span>
+        </p>
       </div>
     </div>
   );
