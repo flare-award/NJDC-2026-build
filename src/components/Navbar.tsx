@@ -21,7 +21,7 @@ export default function Navbar() {
   const clickCount = useRef(0);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user, signOut, setAuthModalOpen, setAuthMode } = useUserAuth();
-  const { balance, hasGoldBadge, hasVipBoost, displayNickname, hasCustomNickname } = useNodbet();
+  const { balance, level, displayNickname, hasCustomNickname } = useNodbet();
   const [nicknameModalOpen, setNicknameModalOpen] = useState(false);
 
   // Скрытый вход в админ-панель: 5 быстрых кликов по логотипу
@@ -96,11 +96,11 @@ export default function Navbar() {
 
             {user ? (
               <div className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5">
-                <User size={15} className={hasGoldBadge ? "text-yellow-400" : hasVipBoost ? "text-red-400" : "text-fuchsia-400"} />
+                <User size={15} className="text-fuchsia-400" />
                 <span className="flex max-w-[150px] flex-col leading-tight">
                   <span className="truncate text-xs font-semibold text-zinc-100" title={`Никнейм: ${displayNickname}`}>
                     {displayNickname}
-                    {hasGoldBadge && <span className="ml-1 text-[10px] text-yellow-400 font-bold">👑</span>}
+                    <span className="ml-1 text-[9px] text-yellow-400 font-bold" title="Ваш уровень NODBET">Lv.{level}</span>
                     {!hasCustomNickname && <span className="ml-1 text-[9px] text-zinc-500">(временный)</span>}
                   </span>
                   <span className="truncate text-[10px] text-zinc-500" title={user.email}>
@@ -181,7 +181,7 @@ export default function Navbar() {
                   <span className="flex flex-col leading-tight truncate">
                     <span className="font-semibold text-zinc-100 truncate">
                       {displayNickname}
-                      {hasGoldBadge && <span className="ml-1 text-[10px] text-yellow-400">👑</span>}
+                      <span className="ml-1 text-[10px] text-yellow-400">Lv.{level}</span>
                     </span>
                     <span className="text-[10px] text-zinc-500 truncate">{user.email}</span>
                   </span>
