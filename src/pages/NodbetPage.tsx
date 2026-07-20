@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Flame,
@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Clock,
   History,
-  ShoppingCart,
   Crown,
   ShieldCheck,
 } from "lucide-react";
@@ -23,7 +22,6 @@ import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
 
-// Варианты ставок на спин (пункт 18).
 const SPIN_PRESETS = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000];
 const CUSTOM_MIN = 50000;
 const CUSTOM_MAX = 500000;
@@ -34,7 +32,6 @@ export default function NodbetPage() {
     xp,
     level,
     levelProgress,
-    levelTitle,
     dailyBonusAvailable,
     inventory,
     bets,
@@ -42,8 +39,10 @@ export default function NodbetPage() {
     highRollers,
     placeBet,
     spinRoulette,
+    commitSpin,
     buyPerk,
     claimDailyBonus,
+    activatePromoCode,
     setCustomStatus,
     hasDoubleSpin,
   } = useNodbet();
@@ -73,12 +72,44 @@ export default function NodbetPage() {
   // Custom status input
   const [statusInput, setStatusInput] = useState<string>("");
 
+  // Promo code state (пункт 6)
+  const [promoInput, setPromoInput] = useState<string>("");
+  const [promoToast, setPromoToast] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Daily bonus state
   const [bonusToast, setBonusToast] = useState<string | null>(null);
 
-  const wheelSectors = useMemo(() => buildWheelSectors(), []);
-  const wheelBg = useMemo(() => wheelGradient(wheelSectors), [wheelSectors]);
+  useEffect(() => {
+    if (inventory.compensationClaimed250k && !sessionStorage.getItem("njdc_250k_toast_shown_v1")) {
+      sessionStorage.setItem("njdc_250k_toast_shown_v1", "true");
+      setTimeout(() => {
+        setBonusToast("🎁 Компенсация за обновление: вам начислено +250,000 NOD-Коинов!");
+        playSound("jackpot");
+      }, 500);
+      setTimeout(() => setBonusToast(null), 6000);
+    }
+  }, [inventory.compensationClaimed250k]);
 
-  // Реальная сумма спина в зависимости от выбранного режима.
+  const playSound = (kind: "spin" | "win" | "lose" | "jackpot" | "tick" | "bet") => {
+    try {
+      const urls: Record<string, string> = {
+        tick: "https://actions.google.com/sounds/v1/ui/click.ogg",
+        win: "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg",
+        lose: "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg",
+        jackpot: "https://actions.google.com/sounds/v1/cartoon/magic_chime.ogg",
+        bet: "https://actions.google.com/sounds/v1/ui/button_click.ogg",
+        spin: "https://actions.google.com/sounds/v1/tools/ratchet_turn.ogg",
+      };
+      const url = urls[kind];
+      if (!url) return;
+      const a = new Audio(url);
+      a.volume = 0.25;
+      a.play().catch(() => {});
+    } catch {
+      /* no audio */
+    }
+  };
+
   const effectiveSpinAmount = useMemo(() => {
     if (spinMode === "free") return 0;
     if (spinMode === "all") return balance;
@@ -86,77 +117,50 @@ export default function NodbetPage() {
     return spinBetAmount;
   }, [spinMode, balance, customSpin, spinBetAmount]);
 
-  // Sound effects
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const playSound = (type: "tick" | "win" | "jackpot" | "bet" | "lose") => {
-    try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      }
-      const ctx = audioCtxRef.current;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      const now = ctx.currentTime;
-      if (type === "tick") {
-        osc.frequency.setValueAtTime(440, now);
-        osc.frequency.exponentialRampToValueAtTime(110, now + 0.05);
-        gain.gain.setValueAtTime(0.1, now);
-        gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
-        osc.start(now);
-        osc.stop(now + 0.05);
-      } else if (type === "win") {
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(523.25, now);
-        osc.frequency.setValueAtTime(659.25, now + 0.15);
-        osc.frequency.setValueAtTime(783.99, now + 0.3);
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
-        osc.start(now);
-        osc.stop(now + 0.6);
-      } else if (type === "jackpot") {
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(587.33, now);
-        osc.frequency.setValueAtTime(880, now + 0.2);
-        osc.frequency.setValueAtTime(1174.66, now + 0.4);
-        gain.gain.setValueAtTime(0.25, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
-        osc.start(now);
-        osc.stop(now + 0.8);
-      } else if (type === "lose") {
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(220, now);
-        osc.frequency.exponentialRampToValueAtTime(70, now + 0.5);
-        gain.gain.setValueAtTime(0.18, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-        osc.start(now);
-        osc.stop(now + 0.5);
-      } else if (type === "bet") {
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(330, now);
-        osc.frequency.setValueAtTime(660, now + 0.1);
-        gain.gain.setValueAtTime(0.15, now);
-        gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
-        osc.start(now);
-        osc.stop(now + 0.2);
-      }
-    } catch {
-      /* ignore */
-    }
-  };
+  const wheelSectors = useMemo(() => buildWheelSectors(), []);
+  const wheelBg = useMemo(() => wheelGradient(wheelSectors), [wheelSectors]);
+
+  const activeMatch = useMemo(() => matches.find((m) => m.id === selectedMatchId), [matches, selectedMatchId]);
+
+  const sortedMatches = useMemo(() => {
+    return [...matches].sort((a, b) => {
+      const sa = a.status === "live" ? 0 : a.status === "upcoming" ? 1 : 2;
+      const sb = b.status === "live" ? 0 : b.status === "upcoming" ? 1 : 2;
+      if (sa !== sb) return sa - sb;
+      return a.stage - b.stage || a.match_number - b.match_number;
+    });
+  }, [matches]);
+
+  const pendingBets = useMemo(() => bets.filter((b) => b.status === "pending"), [bets]);
+  const resolvedBets = useMemo(() => bets.filter((b) => b.status !== "pending"), [bets]);
 
   const handleDailyBonus = () => {
-    const res = claimDailyBonus();
-    if (res.ok) {
-      playSound("win");
-      setBonusToast("🎉 Ежедневный бонус +2,500 NOD и +200 XP успешно зачислены!");
+    const { ok, error, reward } = claimDailyBonus();
+    if (!ok) {
+      setBetErrorToast(error || "Бонус пока недоступен");
+      setTimeout(() => setBetErrorToast(null), 3000);
     } else {
-      setBonusToast(res.error || "Ежедневный бонус уже получен сегодня.");
+      playSound("jackpot");
+      setBonusToast(`🎁 Вы получили ежедневный бонус +${reward?.toLocaleString()} NOD!`);
+      setTimeout(() => setBonusToast(null), 4000);
     }
-    setTimeout(() => setBonusToast(null), 4000);
   };
 
+  const handleActivatePromo = async () => {
+    if (!promoInput.trim()) return;
+    const res = await activatePromoCode(promoInput);
+    if (res.ok) {
+      playSound("jackpot");
+      setPromoToast({ ok: true, text: "🎉 Промокод NJDC-BONUS-2026 успешно активирован! Начислено +10,000 NOD-Коинов!" });
+      setPromoInput("");
+    } else {
+      playSound("lose");
+      setPromoToast({ ok: false, text: res.error || "Ошибка активации промокода" });
+    }
+    setTimeout(() => setPromoToast(null), 4500);
+  };
+
+  // Вращение рулетки с синхронизированной остановкой и отложенным балансом (пункты 2, 3, 8)
   const handleSpinWheel = () => {
     if (isSpinning) return;
     const amount = effectiveSpinAmount;
@@ -175,6 +179,7 @@ export default function NodbetPage() {
     setShowSpinWinModal(false);
     setLastSpinResults(null);
 
+    // Генерируем результаты спина без изменения баланса до окончания анимации (пункт 3)
     const { ok, results, error } = spinRoulette(amount);
     if (!ok || !results.length) {
       setIsSpinning(false);
@@ -183,19 +188,24 @@ export default function NodbetPage() {
       return;
     }
 
-    // Колесо останавливается на секторе ПЕРВОГО результата (синхронизация, пункт 8).
+    // Колесо останавливается на секторе ПЕРВОГО результата (синхронизация, пункт 2).
     const first = results[0];
     const sector = wheelSectors.find((s) => s.id === first.bonusId);
-    // Указатель сверху (0deg). Останавливаем середину сектора под указателем.
-    const targetOffset = sector ? 360 - sector.midDeg : 0;
+    // Находим точный угол, чтобы середина сектора (midDeg) после поворота стала 0deg сверху под стрелкой.
+    const targetRem = sector ? (360 - sector.midDeg) % 360 : 0;
+    const currentRem = spinRotation % 360;
+    let diff = targetRem - currentRem;
+    if (diff <= 0) diff += 360;
     const fullSpins = 360 * (5 + Math.floor(Math.random() * 3));
-    const nextAngle = spinRotation + fullSpins + targetOffset;
+    const nextAngle = spinRotation + fullSpins + diff;
     setSpinRotation(nextAngle);
 
     const tickInterval = setInterval(() => playSound("tick"), 180);
 
     setTimeout(() => {
       clearInterval(tickInterval);
+      // Вот ТОГДА и только тогда пополняется баланс, начисляется XP и обновляется история! (пункт 3)
+      commitSpin(results);
       setIsSpinning(false);
       setLastSpinResults(results);
       setShowSpinWinModal(true);
@@ -228,7 +238,7 @@ export default function NodbetPage() {
     const { ok, error } = placeBet(selectedMatchId, selectedMapIndex, selectedTeamId, selectedTeamName, betAmountInput, overtimePick);
     if (!ok) {
       setBetErrorToast(error || "Не удалось принять ставку");
-      setTimeout(() => setBetErrorToast(null), 4000);
+      setTimeout(() => setBetErrorToast(null), 3500);
       return;
     }
     playSound("bet");
@@ -252,73 +262,39 @@ export default function NodbetPage() {
   };
 
   const handleSaveStatus = () => {
-    const res = setCustomStatus(statusInput);
-    if (res.ok) {
-      playSound("win");
-      setBonusToast("🏷️ Ваш собственный статус сохранён и виден в Топе Хайроллеров!");
+    const { ok, error } = setCustomStatus(statusInput);
+    if (!ok) {
+      setBetErrorToast(error || "Ошибка сохранения");
+      setTimeout(() => setBetErrorToast(null), 3000);
     } else {
-      setBetErrorToast(res.error || "Ошибка");
-      setTimeout(() => setBetErrorToast(null), 3500);
-      return;
+      setBonusToast("🏷️ Собственный статус сохранён! Он отображается в Топе Хайроллеров.");
+      setTimeout(() => setBonusToast(null), 3000);
     }
-    setTimeout(() => setBonusToast(null), 3500);
   };
 
-  const pendingBetsCount = bets.filter((b) => b.status === "pending").length;
-
-  // Возможный выигрыш выбранной ставки (для купона).
-  const selectedMatch = matches.find((m) => m.id === selectedMatchId);
-  const selectedOdds = useMemo(() => {
-    if (!selectedMatch || !selectedTeamId) return 1.9;
-    const oddsA = Math.round((1.75 + (selectedMatch.match_number % 3) * 0.13 + selectedMapIndex * 0.05) * 100) / 100;
-    const oddsB = Math.round((2.05 - (selectedMatch.match_number % 3) * 0.11 + selectedMapIndex * 0.05) * 100) / 100;
-    let o = 1.9;
-    if (selectedTeamId === selectedMatch.team_a) o = oddsA;
-    else if (selectedTeamId === selectedMatch.team_b) o = oddsB;
-    return Math.round((o + 0.25) * 100) / 100;
-  }, [selectedMatch, selectedTeamId, selectedMapIndex]);
-
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen bg-[#0d0d0d] pb-24 text-white">
       {/* HERO BANNER */}
-      <section className="relative overflow-hidden border-b border-red-500/20 bg-gradient-to-b from-[#1c0100] via-[#0d0d0d] to-[#0d0d0d] pt-8 pb-10">
-        <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-red-600 via-yellow-500 to-red-600 animate-pulse" />
-        <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-red-600/15 blur-3xl pointer-events-none" />
-        <div className="absolute -left-24 -bottom-24 h-96 w-96 rounded-full bg-yellow-500/10 blur-3xl pointer-events-none" />
+      <div className="relative overflow-hidden border-b border-red-500/30 bg-gradient-to-r from-red-950/80 via-[#160a0a] to-[#120a16] pt-10 pb-12">
+        <div className="absolute -right-20 -top-20 h-96 w-96 rounded-full bg-red-600/15 blur-3xl pointer-events-none" />
+        <div className="absolute -left-20 bottom-0 h-80 w-80 rounded-full bg-yellow-500/10 blur-3xl pointer-events-none" />
 
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          {/* DISCLAIMER STRIP */}
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-200">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-yellow-400 animate-ping" />
-              <span className="font-bold uppercase tracking-wider text-yellow-300">ПАРТНЁР И СПОНСОР ТУРНИРА — NODBET</span>
-            </div>
-            <p className="text-zinc-300 text-center sm:text-right">
-              Внимание: Все ставки и рулетка работают <b>на виртуальные NOD-Коины</b> и не имеют ценности вне сайта. Играйте ради азарта — можно и выиграть, и проиграть!
-            </p>
-          </div>
-
-          {/* USER BANK & PROFILE CARD */}
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2.5">
-                <span className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1 font-display text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-red-600/30">
-                  <Flame size={14} className="fill-yellow-300 text-yellow-300" />
-                  E-SPORTS BETTING & CASINO
-                </span>
-                <span className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-zinc-300">
-                  {levelTitle}
-                </span>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs font-black uppercase tracking-widest text-yellow-400">
+                <Flame size={14} className="animate-pulse" />
+                Официальный спонсор NJDC 2026
               </div>
-              <h1 className="mt-3 font-display text-4xl font-black italic tracking-wider text-white uppercase sm:text-5xl lg:text-6xl transform -skew-x-3">
-                NOD<span className="text-red-500">BET</span> <span className="text-gradient">АРЕНА</span>
+              <h1 className="mt-3 font-display text-4xl sm:text-5xl lg:text-6xl font-black italic uppercase tracking-tight text-white leading-none">
+                АРЕНА <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-amber-300">NODBET</span>
               </h1>
-              <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-                Ставь на матчи турнира NJDC 2026, крути честную Клатч-Рулетку, прокачивай уровень и поднимайся в Зал Славы Хайроллеров!
+              <p className="mt-2 text-sm sm:text-base text-zinc-300">
+                Честная рулетка с реальными шансами, ставки по картам матчей (Bo2/Bo3), магазин без читов и Топ Хайроллеров. Зарабатывайте XP и поднимайтесь на вершину!
               </p>
             </div>
 
-            {/* BALANCE BOX + XP/LEVEL (пункт 23) */}
+            {/* BALANCE BOX + XP/LEVEL + PROMO (пункты 6, 23) */}
             <div className="flex flex-col gap-4 rounded-2xl border border-red-500/30 bg-[#160a0a]/90 p-5 shadow-2xl backdrop-blur-md">
               <div className="flex flex-wrap items-center gap-4 sm:gap-6">
                 <div className="flex items-center gap-3.5">
@@ -343,7 +319,7 @@ export default function NodbetPage() {
                 )}
               </div>
 
-              {/* XP BAR + LEVEL (пункт 23) */}
+              {/* XP BAR + LEVEL */}
               <div className="w-full min-w-[260px]">
                 <div className="mb-1 flex items-center justify-between text-[11px]">
                   <span className="flex items-center gap-1.5 font-bold text-yellow-300">
@@ -366,6 +342,34 @@ export default function NodbetPage() {
                   <span>Всего XP: {xp.toLocaleString()}{inventory.coinMagnet ? " · 🧲 +10% XP" : ""}</span>
                 </div>
               </div>
+
+              {/* PROMO CODE INPUT (пункт 6) */}
+              <div className="mt-1 pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-300">
+                  <Gift size={15} className="text-cyan-400 shrink-0" />
+                  <span className="font-semibold">Промокод от спонсора:</span>
+                </div>
+                {inventory.promoUsed ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-green-500/20 border border-green-500/40 px-3 py-1.5 text-xs font-bold text-green-300">
+                    <ShieldCheck size={14} /> ✓ Активирован (NJDC-BONUS-2026)
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={promoInput}
+                      onChange={(e) => setPromoInput(e.target.value)}
+                      placeholder="NJDC-BONUS-2026"
+                      className="w-40 sm:w-48 rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs font-mono font-bold text-white uppercase placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none"
+                    />
+                    <button
+                      onClick={handleActivatePromo}
+                      className="rounded-xl bg-gradient-to-r from-cyan-400 to-sky-500 px-3.5 py-1.5 text-xs font-black uppercase tracking-wider text-slate-950 hover:opacity-90 active:scale-95 cursor-pointer shrink-0"
+                    >
+                      Активировать
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -387,6 +391,11 @@ export default function NodbetPage() {
                 🖼️ Рамка Зала Славы
               </span>
             )}
+            {inventory.crownBadge && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-500/60 bg-yellow-500/20 px-3 py-1 text-xs font-black text-yellow-300 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]">
+                👑 Корона Хайроллера
+              </span>
+            )}
             {inventory.customStatusOwned && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-xs font-bold text-yellow-300">
                 🏷️ {inventory.customStatusText || "Свой статус"}
@@ -397,7 +406,7 @@ export default function NodbetPage() {
                 🧲 Мультипас Хайроллера
               </span>
             )}
-            {!inventory.radarUnlocked && !inventory.doubleSpin && !inventory.hallFrame && !inventory.customStatusOwned && !inventory.coinMagnet && (
+            {!inventory.radarUnlocked && !inventory.doubleSpin && !inventory.hallFrame && !inventory.crownBadge && !inventory.customStatusOwned && !inventory.coinMagnet && (
               <span className="text-xs text-zinc-600">Пока нет купленных привилегий — загляните в Магазин Привилегий.</span>
             )}
           </div>
@@ -409,6 +418,14 @@ export default function NodbetPage() {
               <span>{bonusToast}</span>
             </div>
           )}
+          {promoToast && (
+            <div className={`mt-4 rounded-xl border px-4 py-3 text-sm font-medium animate-fade-in flex items-center gap-2 ${
+              promoToast.ok ? "border-cyan-500/40 bg-cyan-950/80 text-cyan-200" : "border-red-500/40 bg-red-950/80 text-red-200"
+            }`}>
+              <Gift size={18} className="shrink-0" />
+              <span>{promoToast.text}</span>
+            </div>
+          )}
           {betSuccessToast && (
             <div className="mt-4 rounded-xl border border-yellow-500/40 bg-yellow-950/80 px-4 py-3 text-sm font-medium text-yellow-200 animate-fade-in flex items-center gap-2">
               <Flame size={18} className="text-yellow-400 shrink-0" />
@@ -416,77 +433,57 @@ export default function NodbetPage() {
             </div>
           )}
           {betErrorToast && (
-            <div className="mt-4 rounded-xl border border-red-500/40 bg-red-950/80 px-4 py-3 text-sm font-medium text-red-200 animate-fade-in flex items-center gap-2">
-              <HelpCircle size={18} className="text-red-400 shrink-0" />
-              <span>{betErrorToast}</span>
+            <div className="mt-4 rounded-xl border border-red-500/40 bg-red-950/80 px-4 py-3 text-sm font-medium text-red-200 animate-fade-in">
+              <span>⚠️ {betErrorToast}</span>
             </div>
           )}
         </div>
-      </section>
+      </div>
 
-      {/* NAV TABS */}
-      <section className="sticky top-[61px] z-40 border-b border-white/10 bg-[#0d0d0d]/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-4 py-2.5 sm:px-6 lg:px-8">
-          <button
-            onClick={() => setActiveTab("roulette")}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "roulette" ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-600/30" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <span className="text-base">🎰</span> Клатч-Рулетка NODBET
-          </button>
-          <button
-            onClick={() => setActiveTab("line")}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "line" ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-600/30" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <TrendingUp size={16} className={activeTab === "line" ? "text-yellow-300" : ""} />
-            Линия Ставок на Матчи
-          </button>
-          <button
-            onClick={() => setActiveTab("shop")}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "shop" ? "bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-amber-500/20" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <ShoppingCart size={16} className={activeTab === "shop" ? "text-black" : "text-yellow-400"} />
-            Магазин Привилегий
-          </button>
-          <button
-            onClick={() => setActiveTab("my_bets")}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "my_bets" ? "bg-gradient-to-r from-red-600 to-red-500 text-white shadow-lg shadow-red-600/30" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <History size={16} />
-            Мои Ставки
-            {pendingBetsCount > 0 && <span className="ml-1 rounded-full bg-yellow-400 px-2 py-0.5 text-xs font-black text-black">{pendingBetsCount}</span>}
-          </button>
-          <button
-            onClick={() => setActiveTab("leaderboard")}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "leaderboard" ? "bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-lg shadow-yellow-500/20" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <Crown size={16} />
-            Топ Хайроллеров
-          </button>
+      {/* SUB-NAV TABS */}
+      <div className="border-b border-white/10 bg-[#121212] sticky top-0 z-30 backdrop-blur-md bg-opacity-90">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between overflow-x-auto py-2 gap-2">
+            <div className="flex items-center gap-1.5">
+              {[
+                { key: "roulette", label: "🎰 Клатч-Рулетка", desc: "Честное колесо и фри-спин" },
+                { key: "line", label: "⚡ Линия ставок", desc: `Боевые линии · ${matches.length} игр` },
+                { key: "shop", label: "👑 Магазин", desc: "Честные привилегии" },
+                { key: "my_bets", label: "📜 Мои ставки", desc: `В игре: ${pendingBets.length}` },
+                { key: "leaderboard", label: "🏆 Зал Славы", desc: "Топ Хайроллеров по балансу" },
+              ].map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key as typeof activeTab)}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-black transition-all cursor-pointer whitespace-nowrap ${
+                    activeTab === t.key
+                      ? "bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 text-white shadow-lg shadow-red-600/30 scale-102"
+                      : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <span>{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </section>
+      </div>
 
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* MAIN CONTENT AREA */}
+      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
         {/* ======================= TAB 1: ROULETTE ======================= */}
         {activeTab === "roulette" && (
-          <div className="grid gap-8 lg:grid-cols-12">
-            <div className="lg:col-span-7 flex flex-col items-center rounded-3xl border border-red-500/30 bg-[#141414] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-red-600 via-yellow-500 to-red-600" />
-              <div className="text-center mb-6">
-                <span className="inline-block rounded-full bg-red-600/20 px-3 py-1 font-mono text-xs font-bold text-red-400 uppercase tracking-wider">
-                  INSTANT CS-ROULETTE
+          <div className="grid gap-10 lg:grid-cols-12 items-start">
+            {/* WHEEL CONTROLLER */}
+            <div className="lg:col-span-7 rounded-3xl border border-red-500/20 bg-[#141414] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-red-600 via-yellow-400 to-red-600" />
+
+              <div className="text-center">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/30 px-3 py-1 text-xs font-bold text-yellow-400 uppercase tracking-widest">
+                  Честная рулетка · NODBET v3
                 </span>
-                <h2 className="mt-2 font-display text-3xl font-black text-white uppercase sm:text-4xl">
-                  Клатч-Рулетка <span className="text-yellow-400">NODBET</span>
+                <h2 className="mt-3 font-display text-2xl sm:text-3xl font-black italic uppercase text-white tracking-tight">
+                  Колесо <span className="text-yellow-400">Клатч-Фортуны</span>
                 </h2>
                 <p className="mt-1 text-xs text-zinc-400">
                   Честное колесо: можно и выиграть, и потерять. Чем выше ставка — тем крупнее и куш, и риск.
@@ -509,11 +506,9 @@ export default function NodbetPage() {
                   }}
                 >
                   <div className="absolute inset-2 rounded-full border-4 border-black/40 bg-transparent pointer-events-none" />
-                  {/* Метки секторов, размещены по их средним углам (синхрон с шансами, пункт 8) */}
                   {wheelSectors.map((s) => {
-                    // Радиус для подписи внутри колеса.
                     const rad = ((s.midDeg - 90) * Math.PI) / 180;
-                    const r = 41; // % от центра
+                    const r = 41;
                     const left = 50 + r * Math.cos(rad);
                     const top = 50 + r * Math.sin(rad);
                     return (
@@ -531,24 +526,24 @@ export default function NodbetPage() {
                       </span>
                     );
                   })}
-                  <div className="h-24 w-24 sm:h-28 sm:w-28 rounded-full bg-[#111] border-4 border-red-600 flex flex-col items-center justify-center z-10 shadow-inner">
-                    <span className="font-display text-lg font-black text-white italic tracking-wider">NOD</span>
-                    <span className="font-display text-xs font-black text-yellow-400">SPIN</span>
+                  <div className="h-16 w-16 rounded-full bg-[#1a1a1a] border-4 border-yellow-500 shadow-inner flex items-center justify-center z-10">
+                    <span className="font-display text-sm font-black italic text-yellow-400">NOD</span>
                   </div>
                 </div>
               </div>
 
-              {/* BET AMOUNT SELECTION (пункт 18) */}
-              <div className="w-full max-w-md mt-6 space-y-4">
-                <div className="flex items-center justify-between text-xs text-zinc-400">
-                  <span>Ставка на спин:</span>
-                  <span className="font-mono font-bold text-white text-sm">
-                    {effectiveSpinAmount === 0 ? "Фри-спин (0 NOD)" : `${effectiveSpinAmount.toLocaleString()} NOD`}
-                    {hasDoubleSpin && effectiveSpinAmount > 0 && <span className="text-purple-300"> ×2</span>}
+              {/* BET SELECTOR */}
+              <div className="mt-8 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-zinc-400">
+                  <span>Выберите ставку на спин</span>
+                  <span className="text-yellow-400 font-mono">
+                    К списанию: {effectiveSpinAmount > 0 ? `${(effectiveSpinAmount * (hasDoubleSpin ? 2 : 1)).toLocaleString()} NOD` : "ФРИ-СПИН (0 NOD)"}
+                    {hasDoubleSpin && effectiveSpinAmount > 0 ? " (x2 спина)" : ""}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2">
+                {/* PRESETS */}
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
                   {SPIN_PRESETS.map((amt) => (
                     <button
                       key={amt}
@@ -556,423 +551,357 @@ export default function NodbetPage() {
                         setSpinMode("preset");
                         setSpinBetAmount(amt);
                       }}
-                      className={`rounded-lg py-2 text-xs font-bold transition-all cursor-pointer ${
+                      disabled={isSpinning}
+                      className={`rounded-xl py-2 text-xs font-mono font-bold transition-all cursor-pointer ${
                         spinMode === "preset" && spinBetAmount === amt ? "bg-red-600 text-white shadow-md" : "bg-white/5 text-zinc-300 hover:bg-white/10"
                       }`}
                     >
-                      {amt >= 1000 ? `${amt / 1000}K` : amt}
+                      {amt >= 1000 ? `${amt / 1000}k` : amt}
                     </button>
                   ))}
                 </div>
 
+                {/* SPECIAL BUTTONS */}
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setSpinMode("free")}
-                    className={`rounded-lg py-2 text-xs font-bold transition-all cursor-pointer ${
+                    disabled={isSpinning}
+                    className={`rounded-xl py-2.5 text-xs font-black uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       spinMode === "free" ? "bg-yellow-400 text-black shadow-md" : "bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30"
                     }`}
                   >
-                    🎯 Фри-Спин
+                    <Gift size={14} /> ФРИ-СПИН (50 NOD)
                   </button>
                   <button
                     onClick={() => setSpinMode("custom")}
-                    className={`rounded-lg py-2 text-xs font-bold transition-all cursor-pointer ${
+                    disabled={isSpinning}
+                    className={`rounded-xl py-2.5 text-xs font-black uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       spinMode === "custom" ? "bg-red-600 text-white shadow-md" : "bg-white/5 text-zinc-300 hover:bg-white/10"
                     }`}
                   >
-                    ✏️ Своя ставка
+                    <span>Своя (50k–500k)</span>
                   </button>
                   <button
                     onClick={() => setSpinMode("all")}
-                    className={`rounded-lg py-2 text-xs font-bold transition-all cursor-pointer ${
+                    disabled={isSpinning}
+                    className={`rounded-xl py-2.5 text-xs font-black uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       spinMode === "all" ? "bg-gradient-to-r from-red-600 to-yellow-500 text-white shadow-md" : "bg-white/5 text-zinc-300 hover:bg-white/10"
                     }`}
                   >
-                    💰 Поставить всё
+                    <Flame size={14} /> ПОСТАВИТЬ ВСЁ
                   </button>
                 </div>
 
                 {spinMode === "custom" && (
-                  <div>
+                  <div className="flex items-center gap-3 bg-black/40 p-3 rounded-2xl border border-white/10">
+                    <span className="text-xs text-zinc-400 font-medium">Своя сумма (NOD):</span>
                     <input
                       type="number"
-                      value={customSpin}
                       min={CUSTOM_MIN}
                       max={CUSTOM_MAX}
-                      onChange={(e) => setCustomSpin(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-full rounded-xl border border-white/15 bg-black/60 px-4 py-2.5 font-mono text-sm font-bold text-white focus:border-red-500 focus:outline-none"
+                      step={10000}
+                      value={customSpin}
+                      onChange={(e) => setCustomSpin(Math.max(CUSTOM_MIN, Math.min(CUSTOM_MAX, Number(e.target.value) || CUSTOM_MIN)))}
+                      disabled={isSpinning}
+                      className="flex-1 rounded-xl bg-white/10 px-3 py-1.5 font-mono text-sm font-bold text-yellow-400 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
-                    <p className="mt-1 text-[11px] text-zinc-500">
-                      От {CUSTOM_MIN.toLocaleString()} до {CUSTOM_MAX.toLocaleString()} NOD.
-                      {(customSpin < CUSTOM_MIN || customSpin > CUSTOM_MAX) && <span className="text-red-400"> Будет округлено в допустимый диапазон.</span>}
-                    </p>
+                    <span className="text-[11px] text-zinc-500">мин 50k / макс 500k</span>
                   </div>
                 )}
 
+                {/* SPIN BUTTON */}
                 <button
                   onClick={handleSpinWheel}
                   disabled={isSpinning}
-                  className="w-full rounded-2xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 py-4 font-display text-lg font-black uppercase tracking-wider text-white shadow-xl shadow-red-600/30 transition-all hover:scale-[1.02] hover:shadow-2xl active:scale-95 disabled:opacity-50 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full rounded-2xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 py-4 text-base sm:text-lg font-black uppercase text-white shadow-xl shadow-red-600/30 transition-all hover:scale-[1.01] active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isSpinning ? (
                     <>
                       <RefreshCw size={22} className="animate-spin" /> Вращение колеса...
                     </>
                   ) : (
-                    <>🎡 КРУТИТЬ РУЛЕТКУ NODBET</>
+                    <>
+                      <span>🎰 ВРАЩАТЬ КОЛЕСО ФОРТУНЫ</span>
+                    </>
                   )}
                 </button>
               </div>
 
-              {/* RECENT SPINS */}
-              <div className="w-full mt-8 pt-6 border-t border-white/10">
-                <span className="block text-xs uppercase tracking-wider text-zinc-500 mb-3 text-center">Последние выпавшие бонусы:</span>
-                <div className="flex items-center justify-center gap-2 overflow-x-auto pb-2">
-                  {rouletteHistory.length === 0 && <span className="text-xs text-zinc-600">Пока нет вращений — крутите колесо!</span>}
+              {/* RECENT SPINS FEED */}
+              <div className="mt-6 pt-6 border-t border-white/10">
+                <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 block mb-2">Последние выпадения на сервере:</span>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-2">
                   {rouletteHistory.slice(0, 12).map((spin) => (
                     <span
                       key={spin.id}
                       title={`${spin.label} (${spin.wonCoins >= 0 ? "+" : ""}${spin.wonCoins.toLocaleString()} NOD)`}
-                      className="inline-flex items-center justify-center rounded-lg px-2.5 py-1 text-xs font-black shadow whitespace-nowrap"
-                      style={{ background: BONUSES[spin.bonusId].color, color: BONUSES[spin.bonusId].textColor }}
+                      className="shrink-0 rounded-lg px-2.5 py-1 font-mono text-xs font-bold border border-white/15"
+                      style={{ background: BONUSES[spin.bonusId]?.color || "#27272a", color: BONUSES[spin.bonusId]?.textColor || "#fff" }}
                     >
-                      {BONUSES[spin.bonusId].shortLabel}
+                      {BONUSES[spin.bonusId]?.shortLabel || spin.label}
                     </span>
                   ))}
+                  {rouletteHistory.length === 0 && <span className="text-xs text-zinc-600 italic">Пока нет истории вращений...</span>}
                 </div>
               </div>
             </div>
 
-            {/* PAYOUT TABLE (ordered worst→best, пункт 1) */}
-            <div className="lg:col-span-5 flex flex-col justify-between gap-6">
-              <div className="rounded-3xl border border-white/10 bg-[#161616] p-6 sm:p-8">
-                <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
-                  <Award className="text-yellow-400" /> Таблица выплат Клатч-Рулетки
-                </h3>
-                <p className="mt-1 text-xs text-zinc-400">
-                  Бонусы расставлены от самого плохого к самому крутому. Все они зависят от суммы спина.
-                </p>
-
-                <div className="mt-5 space-y-2.5">
+            {/* PAYTABLE & ODDS INFO */}
+            <div className="lg:col-span-5 space-y-6">
+              <div className="rounded-3xl border border-white/10 bg-[#141414] p-6">
+                <div className="flex items-center gap-2 text-yellow-400 mb-4">
+                  <HelpCircle size={20} />
+                  <h3 className="font-display text-lg font-bold text-white">Таблица выплат (Честные шансы)</h3>
+                </div>
+                <div className="space-y-2.5">
                   {BONUS_ORDER.map((id) => {
                     const b = BONUSES[id];
                     return (
-                      <div
-                        key={id}
-                        className="flex items-center justify-between rounded-xl border p-3"
-                        style={{ borderColor: b.color + "80", background: b.color + "22" }}
-                      >
+                      <div key={b.id} className="flex items-center justify-between rounded-xl bg-white/5 p-3.5 border border-white/5">
                         <div className="flex items-center gap-3">
-                          <span className="text-xl">{b.emoji}</span>
+                          <span className="flex h-8 w-8 items-center justify-center rounded-lg text-lg" style={{ background: b.color, color: b.textColor }}>
+                            {b.emoji}
+                          </span>
                           <div>
-                            <span className="block font-bold text-white text-sm">{b.order}. {b.label}</span>
-                            <span className="text-xs text-zinc-400">{b.description}</span>
+                            <p className="text-xs font-bold text-white">{b.label}</p>
+                            <p className="text-[11px] text-zinc-400">{b.description}</p>
                           </div>
                         </div>
-                        <span className="font-mono font-black text-sm" style={{ color: b.textColor }}>
-                          {b.isNegative ? `−${Math.round(Math.abs(b.multiplier) * 100)}%` : `x${b.multiplier}`}
+                        <span className="font-mono text-xs font-black px-2.5 py-1 rounded bg-black/50 border border-white/10 shrink-0 text-yellow-300">
+                          {b.baseWeight}% шанс
                         </span>
                       </div>
                     );
                   })}
                 </div>
-                <p className="mt-4 text-[11px] text-zinc-500">
-                  🎯 Фри-спин даёт менее 15 коинов — накопить на крупную ставку с нуля будет непросто.
-                </p>
-              </div>
-            </div>
-
-            {/* SPIN RESULT MODAL */}
-            {showSpinWinModal && lastSpinResults && lastSpinResults.length > 0 && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-fade-in">
-                <div className="relative w-full max-w-md rounded-3xl border border-yellow-500/50 bg-[#161616] p-8 text-center shadow-2xl">
-                  {(() => {
-                    const totalDelta = lastSpinResults.reduce((s, r) => s + r.wonCoins, 0);
-                    const positive = totalDelta >= 0;
-                    return (
-                      <>
-                        <div
-                          className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full text-3xl shadow-lg"
-                          style={{ background: positive ? "linear-gradient(135deg,#fbbf24,#d97706)" : "linear-gradient(135deg,#7f1d1d,#450a0a)" }}
-                        >
-                          {positive ? "🎉" : "💀"}
-                        </div>
-                        <h3 className="font-display text-2xl font-black uppercase tracking-wider text-white">
-                          {positive ? "Удачный спин!" : "Не повезло..."}
-                        </h3>
-                        <div className="my-5 space-y-2">
-                          {lastSpinResults.map((r, i) => (
-                            <div key={r.id} className="rounded-2xl bg-white/5 p-3 border border-white/10 flex items-center justify-between">
-                              <span className="text-sm font-bold text-white">
-                                {hasDoubleSpin ? `Спин ${i + 1}: ` : ""}{r.label}
-                              </span>
-                              <span className={`font-mono text-lg font-black ${r.wonCoins >= 0 ? "text-green-400" : "text-red-400"}`}>
-                                {r.wonCoins >= 0 ? "+" : ""}
-                                {r.wonCoins.toLocaleString()} NOD
-                              </span>
-                            </div>
-                          ))}
-                          {lastSpinResults.length > 1 && (
-                            <div className="rounded-2xl bg-yellow-500/10 p-3 border border-yellow-500/30 flex items-center justify-between">
-                              <span className="text-sm font-bold text-yellow-300">Итого:</span>
-                              <span className={`font-mono text-xl font-black ${totalDelta >= 0 ? "text-green-400" : "text-red-400"}`}>
-                                {totalDelta >= 0 ? "+" : ""}
-                                {totalDelta.toLocaleString()} NOD
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setShowSpinWinModal(false)}
-                          className="w-full rounded-xl bg-gradient-brand py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 cursor-pointer"
-                        >
-                          Продолжить
-                        </button>
-                      </>
-                    );
-                  })()}
+                <div className="mt-4 p-3.5 rounded-2xl bg-yellow-500/10 border border-yellow-500/30 text-xs text-zinc-300 space-y-1">
+                  <p className="font-bold text-yellow-400">⚖️ Как работает честная рулетка:</p>
+                  <p>1. Шансы секторов строго соответствуют их площади на колесе (хорошие сектора в сумме выпадают в 55% случаев, плохой в 45%).</p>
+                  <p>2. Единственный отрицательный сектор забирает ставку на текущий спин.</p>
+                  <p>3. На бесплатном вращении (Фри-спине) вы не рискуете ничем, обычный бонус сразу даёт 50 NOD.</p>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         )}
 
-        {/* ======================= TAB 2: BETTING LINE ======================= */}
+        {/* ======================= TAB 2: LINE (MATCH BETS) ======================= */}
         {activeTab === "line" && (
-          <div className="grid gap-8 lg:grid-cols-12">
-            <div className="lg:col-span-7 space-y-4">
+          <div className="grid gap-8 lg:grid-cols-12 items-start">
+            {/* MATCHES LIST */}
+            <div className="lg:col-span-8 space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="font-display text-2xl font-bold text-white flex items-center gap-2">
-                  <TrendingUp className="text-red-500" /> Линия Ставок NJDC 2026
+                <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                  <TrendingUp className="text-yellow-400" /> Боевые Линии Ставок ({sortedMatches.length})
                 </h3>
-                <span className="text-xs text-zinc-500">Ставки принимаются только до начала матча</span>
+                <span className="text-xs text-zinc-500">Коэффициенты рассчитываются честно из прогнозов зрителей</span>
               </div>
 
-              {matches.length === 0 && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-zinc-400">Матчи пока не запланированы.</div>
-              )}
+              <div className="space-y-4">
+                {sortedMatches.map((m) => {
+                  const teamA = teams.find((t) => t.id === m.team_a);
+                  const teamB = teams.find((t) => t.id === m.team_b);
+                  const isUpcoming = m.status === "upcoming";
+                  const totalMaps = maxMapCount(m.format);
 
-              {matches.map((m) => {
-                const teamA = teams.find((t) => t.id === m.team_a);
-                const teamB = teams.find((t) => t.id === m.team_b);
-                const isUpcoming = m.status === "upcoming";
-                const totalMaps = maxMapCount(m.format);
-
-                return (
-                  <div
-                    key={m.id}
-                    className={`rounded-2xl border p-5 transition-all ${
-                      selectedMatchId === m.id ? "border-red-500 bg-red-950/20 shadow-lg" : "border-white/10 bg-[#141414] hover:border-white/20"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span>{STAGE_LABELS[m.stage]?.emoji}</span>
-                        <span className="font-semibold text-zinc-400">
-                          {STAGE_LABELS[m.stage]?.name} · {m.format.toUpperCase()}
-                        </span>
-                      </div>
-                      <StatusBadge status={m.status} />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={36} />
-                        <span className="font-display font-bold text-white text-sm truncate max-w-[120px]">{teamA?.name ?? "Команда А"}</span>
-                      </div>
-                      <div className="text-center">
-                        {m.status !== "upcoming" ? (
-                          <span className="font-mono text-xl font-bold text-white bg-white/10 px-3 py-1 rounded-lg">
-                            {m.score_a} : {m.score_b}
+                  return (
+                    <div key={m.id} className="rounded-2xl border border-white/10 bg-[#141414] p-5 transition-all hover:border-white/20">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{STAGE_LABELS[m.stage]?.emoji}</span>
+                          <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                            {STAGE_LABELS[m.stage]?.name} · <b className="text-yellow-400">{m.format.toUpperCase()}</b>
                           </span>
-                        ) : (
-                          <span className="font-display text-sm font-bold text-zinc-500 uppercase tracking-widest">VS</span>
-                        )}
-                        {m.scheduled_at && <p className="text-[11px] text-zinc-500 mt-1">{m.scheduled_at}</p>}
-                      </div>
-                      <div className="flex items-center gap-2 sm:justify-end">
-                        <div className="flex items-center gap-2 sm:flex-row-reverse">
-                          <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={36} />
-                          <span className="font-display font-bold text-white text-sm truncate max-w-[120px] text-right">{teamB?.name ?? "Команда Б"}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {m.scheduled_at && (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500 font-mono">
+                              <Clock size={12} /> {m.scheduled_at}
+                            </span>
+                          )}
+                          <StatusBadge status={m.status} />
                         </div>
                       </div>
-                    </div>
 
-                    {/* Пункт 5: ставки только для upcoming. По каждой карте — своя линия (Bo2/Bo3). */}
-                    {isUpcoming ? (
-                      <div className="mt-4 space-y-3 pt-3 border-t border-white/5">
-                        {Array.from({ length: totalMaps }).map((_, mapIdx) => {
-                          const oddsA = Math.round((1.75 + (m.match_number % 3) * 0.13 + mapIdx * 0.05 + 0.25) * 100) / 100;
-                          const oddsB = Math.round((2.05 - (m.match_number % 3) * 0.11 + mapIdx * 0.05 + 0.25) * 100) / 100;
-                          const alreadyBet = bets.some((b) => b.matchId === m.id && b.mapIndex === mapIdx && b.status === "pending");
-                          return (
-                            <div key={mapIdx}>
-                              {totalMaps > 1 && (
-                                <div className="mb-1.5 flex items-center gap-2">
-                                  <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-300">
-                                    Карта {mapIdx + 1}
-                                  </span>
-                                  {alreadyBet && <span className="text-[10px] font-bold text-green-400">✓ ставка сделана</span>}
+                      <div className="mt-4 grid grid-cols-3 items-center gap-4">
+                        <div className="flex flex-col items-center gap-1.5 text-center">
+                          <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={44} />
+                          <span className="font-display text-sm sm:text-base font-bold text-white">{teamA?.name || "TBD"}</span>
+                        </div>
+                        <div className="text-center font-display text-xl sm:text-2xl font-black text-zinc-500">VS</div>
+                        <div className="flex flex-col items-center gap-1.5 text-center">
+                          <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={44} />
+                          <span className="font-display text-sm sm:text-base font-bold text-white">{teamB?.name || "TBD"}</span>
+                        </div>
+                      </div>
+
+                      {isUpcoming ? (
+                        <div className="mt-4 space-y-3 pt-3 border-t border-white/5">
+                          {Array.from({ length: totalMaps }).map((_, mapIdx) => {
+                            const oddsA = Math.round((1.75 + (m.match_number % 3) * 0.13 + mapIdx * 0.05 + 0.25) * 100) / 100;
+                            const oddsB = Math.round((2.05 - (m.match_number % 3) * 0.11 + mapIdx * 0.05 + 0.25) * 100) / 100;
+                            const alreadyBet = bets.some((b) => b.matchId === m.id && b.mapIndex === mapIdx && b.status === "pending");
+                            return (
+                              <div key={mapIdx}>
+                                {totalMaps > 1 && (
+                                  <div className="mb-1.5 flex items-center gap-2">
+                                    <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-300">
+                                      Карта {mapIdx + 1}
+                                    </span>
+                                    {alreadyBet && <span className="text-[10px] font-bold text-green-400">✓ ставка сделана</span>}
+                                  </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-3">
+                                  <button
+                                    onClick={() => handleSelectBetOutcome(m.id, mapIdx, teamA?.id || "teamA", teamA?.name || "Команда А")}
+                                    className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                                      selectedMatchId === m.id && selectedMapIndex === mapIdx && selectedTeamId === teamA?.id
+                                        ? "bg-red-600 text-white shadow"
+                                        : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
+                                    }`}
+                                  >
+                                    <span>Победа {teamA?.name || "П1"}</span>
+                                    <span className="font-mono font-black text-yellow-400 text-sm">{oddsA}</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleSelectBetOutcome(m.id, mapIdx, teamB?.id || "teamB", teamB?.name || "Команда Б")}
+                                    className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                                      selectedMatchId === m.id && selectedMapIndex === mapIdx && selectedTeamId === teamB?.id
+                                        ? "bg-red-600 text-white shadow"
+                                        : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
+                                    }`}
+                                  >
+                                    <span>Победа {teamB?.name || "П2"}</span>
+                                    <span className="font-mono font-black text-yellow-400 text-sm">{oddsB}</span>
+                                  </button>
                                 </div>
-                              )}
-                              <div className="grid grid-cols-2 gap-3">
-                                <button
-                                  onClick={() => handleSelectBetOutcome(m.id, mapIdx, teamA?.id || "teamA", teamA?.name || "Команда А")}
-                                  className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                                    selectedMatchId === m.id && selectedMapIndex === mapIdx && selectedTeamId === teamA?.id
-                                      ? "bg-red-600 text-white shadow"
-                                      : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
-                                  }`}
-                                >
-                                  <span>Победа {teamA?.name || "П1"}</span>
-                                  <span className="font-mono font-black text-yellow-400 text-sm">{oddsA}</span>
-                                </button>
-                                <button
-                                  onClick={() => handleSelectBetOutcome(m.id, mapIdx, teamB?.id || "teamB", teamB?.name || "Команда Б")}
-                                  className={`flex items-center justify-between rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                                    selectedMatchId === m.id && selectedMapIndex === mapIdx && selectedTeamId === teamB?.id
-                                      ? "bg-red-600 text-white shadow"
-                                      : "bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
-                                  }`}
-                                >
-                                  <span>Победа {teamB?.name || "П2"}</span>
-                                  <span className="font-mono font-black text-yellow-400 text-sm">{oddsB}</span>
-                                </button>
                               </div>
-                            </div>
-                          );
-                        })}
-                        {m.format === "bo3" && (
-                          <p className="text-[11px] text-zinc-500">
-                            В Bo3 третья карта играется только при счёте 1:1. Если она не состоится — ставка на неё вернётся.
-                          </p>
-                        )}
-                      </div>
-                    ) : m.status === "live" ? (
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
-                        <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
-                          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-400"></span>
-                          Матч идёт (LIVE) — ставки закрыты
-                        </span>
-                        <Link to={`/matches/${m.id}`} className="text-red-400 hover:underline">Смотреть ↗</Link>
-                      </div>
-                    ) : (
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-zinc-500">
-                        <span>Матч завершён · ставки рассчитаны</span>
-                        <Link to={`/matches/${m.id}`} className="text-red-400 hover:underline">Статистика матча ↗</Link>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                            );
+                          })}
+                          {m.format === "bo3" && (
+                            <p className="text-[11px] text-zinc-500">
+                              В Bo3 третья карта играется только при счёте 1:1. Если она не состоится — ставка на неё вернётся.
+                            </p>
+                          )}
+                        </div>
+                      ) : m.status === "live" ? (
+                        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                          <span className="inline-flex items-center gap-1.5 text-green-400 font-bold">
+                            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-400"></span>
+                            Матч идёт (LIVE) — ставки закрыты
+                          </span>
+                          <Link to={`/matches/${m.id}`} className="text-red-400 hover:underline">Смотреть ↗</Link>
+                        </div>
+                      ) : (
+                        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-zinc-500">
+                          <span>Матч завершён</span>
+                          <Link to={`/matches/${m.id}`} className="text-zinc-400 hover:underline">Итоговый счёт ↗</Link>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* BET SLIP */}
-            <div className="lg:col-span-5">
-              <div className="sticky top-32 rounded-3xl border border-red-500/40 bg-[#161616] p-6 sm:p-8 shadow-2xl">
-                <div className="flex items-center justify-between pb-4 border-b border-white/10">
-                  <h4 className="font-display text-lg font-bold text-white flex items-center gap-2">
-                    <Flame className="text-red-500" /> Купон Ставки NODBET
-                  </h4>
-                  {selectedMatchId && (
-                    <button
-                      onClick={() => {
-                        setSelectedMatchId(null);
-                        setSelectedTeamId(null);
-                        setOvertimePick(null);
-                      }}
-                      className="text-xs text-zinc-400 hover:text-white cursor-pointer"
-                    >
-                      Очистить
-                    </button>
-                  )}
+            <div className="lg:col-span-4 sticky top-24">
+              <div className="rounded-3xl border border-red-500/30 bg-[#141414] p-6 shadow-2xl">
+                <div className="flex items-center gap-2 border-b border-white/10 pb-4 text-yellow-400">
+                  <Award size={22} />
+                  <h3 className="font-display text-lg font-bold text-white">Купон Ставки</h3>
                 </div>
 
-                {!selectedMatchId ? (
-                  <div className="py-12 text-center text-zinc-500 text-sm">
-                    <p>Купон пуст.</p>
-                    <p className="mt-1 text-xs text-zinc-600">Выберите победителя в предстоящем матче, чтобы собрать ставку.</p>
+                {!activeMatch || !selectedTeamId ? (
+                  <div className="py-10 text-center text-zinc-500 space-y-2">
+                    <HelpCircle size={32} className="mx-auto stroke-1" />
+                    <p className="text-sm">Выберите исход в любой линии слева, чтобы сформировать купон ставки.</p>
                   </div>
                 ) : (
                   <div className="mt-5 space-y-5">
-                    <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
-                      <span className="block text-xs font-semibold text-zinc-400 uppercase">
-                        {selectedMatch?.title}
-                        {selectedMatch && maxMapCount(selectedMatch.format) > 1 && (
-                          <span className="ml-1 text-yellow-400">· Карта {selectedMapIndex + 1}</span>
-                        )}
-                      </span>
-                      <div className="mt-1 flex items-center justify-between">
-                        <span className="font-display font-bold text-white text-base">
-                          Победа: <span className="text-yellow-400">{selectedTeamName}</span>
+                    <div className="rounded-xl bg-white/5 p-4 border border-white/10 space-y-1">
+                      <div className="flex justify-between text-xs text-zinc-400">
+                        <span>Матч</span>
+                        <span className="font-mono text-yellow-400">
+                          {maxMapCount(activeMatch.format) > 1 ? `Карта ${selectedMapIndex + 1}` : "Bo1"}
                         </span>
-                        <span className="font-mono font-black text-red-400 text-lg">{selectedOdds}</span>
+                      </div>
+                      <p className="font-bold text-white text-sm">{activeMatch.title}</p>
+                      <div className="pt-2 mt-2 border-t border-white/10 flex items-center justify-between">
+                        <span className="text-xs text-zinc-300">Победа: <b className="text-white">{selectedTeamName}</b></span>
+                        <span className="font-mono text-sm font-black text-yellow-400">
+                          x{(
+                            selectedTeamId === activeMatch.team_a
+                              ? Math.round((1.75 + (activeMatch.match_number % 3) * 0.13 + selectedMapIndex * 0.05 + 0.25) * 100) / 100
+                              : Math.round((2.05 - (activeMatch.match_number % 3) * 0.11 + selectedMapIndex * 0.05 + 0.25) * 100) / 100
+                          ).toFixed(2)}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Пункт 6: обязательный прогноз овертайма */}
-                    <div>
-                      <label className="block text-xs font-semibold uppercase text-zinc-400 mb-2">
-                        Будет ли овертайм на этой карте? <span className="text-red-400">*</span>
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
+                    {/* OVERTIME PREDICTION */}
+                    <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-4 space-y-2.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-yellow-300">
+                        <HelpCircle size={14} /> Обязательный прогноз: Овертайм на карте?
+                      </div>
+                      <p className="text-[11px] leading-snug text-zinc-300">
+                        Считается, что овертайм был, если одна из команд набрала &gt; 13 раундов. При ошибке в прогнозе ставка сгорает.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
                         <button
                           onClick={() => setOvertimePick(true)}
-                          className={`rounded-xl py-2.5 text-sm font-bold transition-all cursor-pointer ${
-                            overtimePick === true ? "bg-green-600 text-white shadow" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                          className={`rounded-xl py-2 text-xs font-bold border transition-all cursor-pointer ${
+                            overtimePick === true ? "bg-yellow-400 text-black border-yellow-400 font-black shadow" : "bg-black/40 text-zinc-300 border-white/10 hover:border-white/30"
                           }`}
                         >
-                          ✅ Овертайм будет
+                          ⚡ Да (будет ОТ)
                         </button>
                         <button
                           onClick={() => setOvertimePick(false)}
-                          className={`rounded-xl py-2.5 text-sm font-bold transition-all cursor-pointer ${
-                            overtimePick === false ? "bg-red-600 text-white shadow" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                          className={`rounded-xl py-2 text-xs font-bold border transition-all cursor-pointer ${
+                            overtimePick === false ? "bg-yellow-400 text-black border-yellow-400 font-black shadow" : "bg-black/40 text-zinc-300 border-white/10 hover:border-white/30"
                           }`}
                         >
-                          ❌ Овертайма не будет
+                          🛡️ Нет (&le;13 раундов)
                         </button>
                       </div>
-                      <p className="mt-1.5 text-[11px] text-zinc-500">
-                        Овертайм = у команды больше 13 раундов (напр. 16:14). Если прогноз неверный — ставка сгорает целиком, даже при верной команде.
-                      </p>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold uppercase text-zinc-400 mb-2">
-                        Сумма ставки (В наличии: {balance.toLocaleString()} NOD)
-                      </label>
+                    {/* AMOUNT */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs font-bold text-zinc-400">
+                        <span>Сумма ставки</span>
+                        <span className="font-mono text-yellow-400">Баланс: {balance.toLocaleString()} NOD</span>
+                      </div>
                       <input
                         type="number"
+                        min={100}
+                        max={balance}
+                        step={100}
                         value={betAmountInput}
-                        onChange={(e) => setBetAmountInput(Math.max(0, parseInt(e.target.value) || 0))}
-                        className="w-full rounded-xl border border-white/15 bg-black/60 px-4 py-3 font-mono text-lg font-bold text-white focus:border-red-500 focus:outline-none"
+                        onChange={(e) => setBetAmountInput(Number(e.target.value) || 0)}
+                        className="w-full rounded-xl border border-white/15 bg-black/60 px-4 py-3 font-mono text-base font-bold text-white focus:border-red-500 focus:outline-none"
                       />
-                      <div className="grid grid-cols-4 gap-2 mt-2">
-                        {[500, 1000, 2500, 5000].map((amt) => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[500, 1000, 5000, 10000].map((amt) => (
                           <button
                             key={amt}
                             onClick={() => setBetAmountInput(amt)}
-                            className="rounded-lg bg-white/5 py-1.5 text-xs font-bold text-zinc-300 hover:bg-white/10 cursor-pointer"
+                            className="rounded-lg bg-white/5 py-1.5 text-[11px] font-mono text-zinc-300 hover:bg-white/10"
                           >
-                            {amt}
+                            +{amt}
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-4 flex items-center justify-between">
-                      <span className="text-xs font-bold text-yellow-300">Возможный выигрыш:</span>
-                      <span className="font-mono text-xl font-black text-yellow-400">
-                        {Math.round(betAmountInput * selectedOdds).toLocaleString()} NOD
-                      </span>
-                    </div>
-
+                    {/* SUBMIT BUTTON */}
                     <button
                       onClick={handlePlaceBetSubmit}
-                      className="w-full rounded-2xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 py-4 font-display text-base font-black uppercase tracking-wider text-white shadow-xl shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                      disabled={balance < betAmountInput || betAmountInput <= 0}
+                      className="w-full rounded-xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 py-3.5 text-sm font-black uppercase text-white shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      💥 ЗАРЯДИТЬ СТАВКУ
+                      ✓ ЗАКЛЮЧИТЬ ПАРИ
                     </button>
                   </div>
                 )}
@@ -981,17 +910,17 @@ export default function NodbetPage() {
           </div>
         )}
 
-        {/* ======================= TAB 3: SHOP ======================= */}
+        {/* ======================= TAB 3: SHOP (CHEATS REMOVED, пункты 9, 17) ======================= */}
         {activeTab === "shop" && (
-          <div className="space-y-6">
-            <div className="text-center max-w-2xl mx-auto mb-8">
-              <span className="inline-block rounded-full bg-yellow-500/20 px-3 py-1 font-mono text-xs font-bold text-yellow-400 uppercase tracking-wider">
-                VIP STORE
+          <div className="space-y-8">
+            <div className="text-center max-w-2xl mx-auto">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/30 px-3 py-1 text-xs font-bold text-yellow-400 uppercase tracking-widest">
+                Престижный Магазин NODBET
               </span>
-              <h3 className="mt-2 font-display text-3xl font-black text-white uppercase sm:text-4xl">
-                Магазин Привилегий <span className="text-gradient">NODBET</span>
+              <h3 className="mt-2 font-display text-3xl font-black uppercase italic text-white">
+                Элитные привилегии <span className="text-yellow-400">Хайроллера</span>
               </h3>
-              <p className="mt-2 text-sm text-zinc-400">
+              <p className="mt-2 text-xs sm:text-sm text-zinc-400">
                 Тратьте честно заработанные NOD-Коины на престижные и косметические привилегии. Никаких читов — только статус и удобство.
               </p>
             </div>
@@ -1002,6 +931,7 @@ export default function NodbetPage() {
                   (perk.id === "radar" && inventory.radarUnlocked) ||
                   (perk.id === "double_spin" && inventory.doubleSpin) ||
                   (perk.id === "hall_frame" && inventory.hallFrame) ||
+                  (perk.id === "crown_badge" && inventory.crownBadge) ||
                   (perk.id === "custom_status" && inventory.customStatusOwned) ||
                   (perk.id === "coin_magnet" && inventory.coinMagnet);
 
@@ -1042,7 +972,6 @@ export default function NodbetPage() {
               })}
             </div>
 
-            {/* Настройка собственного статуса (пункт 17) */}
             {inventory.customStatusOwned && (
               <div className="mt-6 rounded-3xl border border-yellow-500/30 bg-[#161616] p-6 sm:p-8">
                 <h4 className="font-display text-lg font-bold text-yellow-300 flex items-center gap-2">🏷️ Ваш собственный статус</h4>
@@ -1063,9 +992,7 @@ export default function NodbetPage() {
                   </button>
                 </div>
                 {inventory.customStatusText && (
-                  <p className="mt-2 text-xs text-zinc-400">
-                    Текущий статус: <b className="text-yellow-300">{inventory.customStatusText}</b>
-                  </p>
+                  <p className="mt-3 text-xs text-green-400 font-medium">✓ Текущий статус: «{inventory.customStatusText}»</p>
                 )}
               </div>
             )}
@@ -1074,77 +1001,74 @@ export default function NodbetPage() {
 
         {/* ======================= TAB 4: MY BETS ======================= */}
         {activeTab === "my_bets" && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="font-display text-2xl font-bold text-white flex items-center gap-2">
-                <History className="text-red-500" /> Мои Активные и Сыгравшие Ставки
+          <div className="space-y-8">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                <History className="text-yellow-400" /> История и активные ставки
               </h3>
-              <p className="text-xs text-zinc-400">
-                Ставки рассчитываются автоматически после завершения матча. Помните: неверный прогноз овертайма сжигает ставку целиком.
-              </p>
+              <span className="text-xs text-zinc-400">Всего пари: {bets.length}</span>
             </div>
 
             {bets.length === 0 ? (
-              <div className="rounded-3xl border border-white/10 bg-[#141414] p-12 text-center">
-                <p className="text-zinc-400 font-medium">У вас пока нет сделанных ставок.</p>
-                <button
-                  onClick={() => setActiveTab("line")}
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-red-500 cursor-pointer"
-                >
-                  Перейти к линии матчей →
-                </button>
+              <div className="rounded-2xl border border-white/10 bg-[#141414] py-16 text-center text-zinc-500">
+                <History size={40} className="mx-auto mb-3 stroke-1 text-zinc-600" />
+                <p className="text-base font-semibold text-zinc-300">Вы ещё не заключали пари в Арене NODBET</p>
+                <p className="mt-1 text-xs text-zinc-500">Перейдите на вкладку «⚡ Линия ставок» и выберите матч для прогноза.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {bets.map((bet) => (
-                  <div key={bet.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#141414] p-5 transition-all hover:border-white/20">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-xs font-semibold text-zinc-400">{bet.matchTitle} · Карта {bet.mapIndex + 1}</span>
-                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold border ${bet.overtimePrediction ? "bg-green-500/20 text-green-300 border-green-500/30" : "bg-zinc-700/40 text-zinc-300 border-white/10"}`}>
-                          Овертайм: {bet.overtimePrediction ? "будет" : "не будет"}
-                        </span>
-                      </div>
-                      <h4 className="font-display text-base font-bold text-white">
-                        Ставка на победу: <span className="text-yellow-400">{bet.teamName}</span>
-                      </h4>
-                      <p className="text-xs text-zinc-500 mt-0.5">
-                        Коэффициент: <b className="text-white font-mono">{bet.odds}</b> · Сделана:{" "}
-                        {new Date(bet.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-white/10">
-                      <div className="text-right">
-                        <span className="block text-xs text-zinc-400">Сумма ставки</span>
-                        <span className="font-mono text-base font-bold text-white">
-                          {bet.amount.toLocaleString()} <span className="text-xs text-yellow-400">NOD</span>
-                        </span>
-                      </div>
-
-                      {bet.status === "pending" ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-yellow-500/20 border border-yellow-500/40 px-3 py-2 text-xs font-bold text-yellow-300">
-                          <Clock size={14} className="animate-pulse" /> В ожидании матча
-                        </span>
-                      ) : bet.status === "won" ? (
-                        <div className="rounded-xl bg-green-500/20 border border-green-500/40 px-4 py-2 text-right">
-                          <span className="block text-[10px] font-bold uppercase text-green-300">🎉 ПОБЕДА!</span>
-                          <span className="font-mono text-sm font-black text-green-400">+{bet.payout.toLocaleString()} NOD</span>
+              <div className="space-y-6">
+                {pendingBets.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-yellow-400 mb-3 flex items-center gap-1.5">
+                      <Clock size={14} /> В игре ({pendingBets.length})
+                    </h4>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {pendingBets.map((b) => (
+                        <div key={b.id} className="rounded-xl border border-yellow-500/30 bg-[#161414] p-4 flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                              <span>{b.matchTitle}</span>
+                              <span className="font-mono text-yellow-400">Карта {b.mapIndex + 1}</span>
+                            </div>
+                            <div className="font-bold text-white text-sm">
+                              Прогноз: <span className="text-yellow-400">{b.teamName}</span> (x{b.odds.toFixed(2)})
+                            </div>
+                            <div className="mt-1 text-[11px] text-zinc-400">
+                              Овертайм: <b className={b.overtimePrediction ? "text-yellow-300" : "text-zinc-300"}>{b.overtimePrediction ? "⚡ Будет (>13)" : "🛡️ Нет (≤13)"}</b>
+                            </div>
+                          </div>
+                          <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center font-mono text-xs">
+                            <span className="text-zinc-400">Ставка: {b.amount.toLocaleString()} NOD</span>
+                            <span className="text-green-400 font-bold">Выплата: {Math.round(b.amount * b.odds).toLocaleString()} NOD</span>
+                          </div>
                         </div>
-                      ) : bet.status === "refunded" ? (
-                        <div className="rounded-xl bg-blue-500/20 border border-blue-500/40 px-4 py-2 text-right">
-                          <span className="block text-[10px] font-bold uppercase text-blue-300">↩️ Возврат (ничья)</span>
-                          <span className="font-mono text-sm font-black text-blue-300">+{bet.payout.toLocaleString()} NOD</span>
-                        </div>
-                      ) : (
-                        <div className="rounded-xl bg-zinc-800 border border-white/10 px-4 py-2 text-right">
-                          <span className="block text-[10px] font-bold uppercase text-zinc-400">❌ Проигрыш</span>
-                          <span className="font-mono text-sm font-bold text-zinc-500">0 NOD</span>
-                        </div>
-                      )}
+                      ))}
                     </div>
                   </div>
-                ))}
+                )}
+
+                {resolvedBets.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Рассчитанные пари ({resolvedBets.length})</h4>
+                    <div className="space-y-2">
+                      {resolvedBets.map((b) => (
+                        <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between rounded-xl border border-white/10 bg-[#141414] p-3.5 gap-2 text-xs">
+                          <div>
+                            <span className="font-bold text-white">{b.matchTitle}</span>
+                            <span className="text-zinc-400 ml-2">({b.teamName}, Карта {b.mapIndex + 1}, x{b.odds.toFixed(2)})</span>
+                            <span className="text-[11px] text-zinc-500 block mt-0.5">Овертайм прогноз: {b.overtimePrediction ? "Да" : "Нет"}</span>
+                          </div>
+                          <div className="flex items-center gap-4 sm:justify-end font-mono">
+                            <span className="text-zinc-400">{b.amount.toLocaleString()} NOD</span>
+                            {b.status === "won" && <span className="text-green-400 font-bold">+{b.payout.toLocaleString()} NOD ✓</span>}
+                            {b.status === "lost" && <span className="text-red-400 font-bold">−{b.amount.toLocaleString()} NOD ✕</span>}
+                            {b.status === "refunded" && <span className="text-yellow-400 font-bold">Возврат ({b.amount.toLocaleString()} NOD)</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1153,19 +1077,16 @@ export default function NodbetPage() {
         {/* ======================= TAB 5: LEADERBOARD ======================= */}
         {activeTab === "leaderboard" && (
           <div className="space-y-6">
-            <div className="text-center max-w-2xl mx-auto mb-6">
-              <span className="inline-block rounded-full bg-amber-500/20 px-3 py-1 font-mono text-xs font-bold text-amber-400 uppercase tracking-wider">
-                HALL OF FAME · TOP HIGH ROLLERS
-              </span>
-              <h3 className="mt-2 font-display text-3xl font-black text-white uppercase sm:text-4xl">
-                Зал Славы <span className="text-yellow-400">Хайроллеров</span>
-              </h3>
-              <p className="mt-2 text-sm text-zinc-400">
-                Самые успешные бетторы и короли рулетки турнира NJDC 2026. Поднимайтесь по уровням и балансу!
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+              <div>
+                <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                  <Crown className="text-yellow-400" /> Зал Славы Хайроллеров
+                </h3>
+                <p className="text-xs text-zinc-400">Топ игроков NODBET по балансу монет и уровням XP.</p>
+              </div>
             </div>
 
-            <div className="overflow-hidden rounded-3xl border border-white/10 bg-[#141414]">
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141414]">
               <table className="w-full text-left text-sm">
                 <thead className="bg-white/5 text-xs uppercase tracking-wider text-zinc-400">
                   <tr>
@@ -1190,7 +1111,12 @@ export default function NodbetPage() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className={`font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.isCurrentUser ? "text-yellow-400" : ""}`}>
+                          {hr.crownBadge && (
+                            <span className="text-base" title="👑 Корона Хайроллера">
+                              👑
+                            </span>
+                          )}
+                          <span className={`font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""} ${hr.isCurrentUser ? "text-yellow-400" : ""}`}>
                             {hr.nickname}
                           </span>
                           {hr.isCurrentUser && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">Вы</span>}
@@ -1219,6 +1145,42 @@ export default function NodbetPage() {
           </div>
         )}
       </div>
+
+      {/* SPIN WIN MODAL */}
+      {showSpinWinModal && lastSpinResults && lastSpinResults.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-md rounded-3xl border border-red-500/40 bg-[#161212] p-6 sm:p-8 text-center shadow-2xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-amber-600 text-black text-3xl shadow-lg mb-4">
+              {lastSpinResults.some((r) => r.isNegative) ? "💀" : lastSpinResults.some((r) => r.bonusId === "jackpot") ? "🟢" : "🎰"}
+            </div>
+
+            <h3 className="font-display text-2xl font-black italic uppercase text-white">
+              {lastSpinResults.length > 1 ? "Результат Дабл Спина!" : "Спин завершён!"}
+            </h3>
+
+            <div className="mt-4 space-y-3">
+              {lastSpinResults.map((res, i) => (
+                <div key={res.id || i} className="rounded-2xl bg-white/5 p-4 border border-white/10">
+                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
+                    {lastSpinResults.length > 1 ? `Вращение ${i + 1}` : "Выпавший сектор"}:
+                  </span>
+                  <p className="font-display text-xl font-bold text-white mt-1">{res.label}</p>
+                  <p className={`font-mono text-lg font-black mt-1 ${res.wonCoins >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {res.wonCoins >= 0 ? `+${res.wonCoins.toLocaleString()}` : `${res.wonCoins.toLocaleString()}`} NOD
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowSpinWinModal(false)}
+              className="mt-6 w-full rounded-2xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 py-3.5 text-sm font-black uppercase text-white shadow-lg cursor-pointer"
+            >
+              Отлично, продолжаем!
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
