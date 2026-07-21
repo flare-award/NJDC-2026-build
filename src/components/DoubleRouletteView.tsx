@@ -7,7 +7,6 @@ import {
   Play,
   Clock,
   EyeOff,
-  Trophy,
   Sparkles,
   Trash2,
   LogOut,
@@ -16,7 +15,8 @@ import {
   CheckCircle2,
   Swords,
   XCircle,
-  CircleDollarSign,
+  UserMinus,
+  Ban,
 } from "lucide-react";
 import { useNodbet } from "../context/NodbetContext";
 import {
@@ -59,14 +59,20 @@ export interface DBRowPlayer {
 const SPIN_PRESETS = [500, 1000, 2500, 5000, 10000, 25000, 50000];
 
 export default function DoubleRouletteView() {
-  const { balance, displayNickname, nickname, level } = useNodbet();
+  const {
+    balance,
+    displayNickname,
+    nickname,
+    doubleRouletteDeduct,
+    doubleRoulettePayout,
+  } = useNodbet();
   const currentUserId = useMemo(() => {
-    // В Supabase или локальном контексте используем никнейм/ID
     return nickname || displayNickname;
   }, [nickname, displayNickname]);
 
   // Lobbies & current active lobby
   const [lobbies, setLobbies] = useState<DBRowLobby[]>([]);
+  const [lobbyPlayerCounts, setLobbyPlayerCounts] = useState<Record<string, number>>({});
   const [activeLobbyId, setActiveLobbyId] = useState<string | null>(null);
   const [activeLobby, setActiveLobby] = useState<DBRowLobby | null>(null);
   const [lobbyPlayers, setLobbyPlayers] = useState<DBRowPlayer[]>([]);
@@ -81,8 +87,11 @@ export default function DoubleRouletteView() {
 
   // Phase 1 betting inputs
   const [myBetAmount, setMyBetAmount] = useState<number>(1000);
+  const [customBetInput, setCustomBetInput] = useState<string>("50000");
+  const [betMode, setBetMode] = useState<"preset" | "all" | "custom">("preset");
   const [mySelectedBonus, setMySelectedBonus] = useState<DoubleBonusId | null>(null);
   const [hasConfirmedPick, setHasConfirmedPick] = useState<boolean>(false);
+  const [betDeducted, setBetDeducted] = useState<boolean>(false);
 
   // Wheel animation state
   const [isSpinning, setIsSpinning] = useState<boolean>(false);
@@ -94,10 +103,12 @@ export default function DoubleRouletteView() {
     allGuessed: boolean;
     noneGuessed: boolean;
   } | null>(null);
+  const [payoutApplied, setPayoutApplied] = useState<boolean>(false);
 
   // Timer countdown state
   const [timeLeft, setTimeLeft] = useState<number>(12);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const spinAppliedRef = useRef<boolean>(false);
 
   const wheelSectors = useMemo(() => buildDoubleWheelSectors(), []);
   const wheelBg = useMemo(() => doubleWheelGradient(wheelSectors), [wheelSectors]);
@@ -135,6 +146,17 @@ export default function DoubleRouletteView() {
         .limit(30);
       if (!error && data) {
         setLobbies(data as DBRowLobby[]);
+        // Fetch player counts for each lobby
+        for (const lob of data) {
+          const { data: plys } = await supabase
+            .from("nodbet_double_lobby_players")
+            .select("id", { count: "exact", head: true })
+            .eq("lobby_id", lob.id);
+          setLobbyPlayerCounts((prev) => ({
+            ...prev,
+            [lob.id]: plys ? (plys as any).length ?? 0 : 0,
+          }));
+        }
       }
     } catch {
       /* ignore */
@@ -269,6 +291,7 @@ export default function DoubleRouletteView() {
         joined_at: new Date().toISOString(),
       };
       setLobbies((prev) => [mockLobby, ...prev]);
+      setLobbyPlayerCounts((prev) => ({ ...prev, [mockLobby.id]: 1 }));
       setActiveLobbyId(mockLobby.id);
       setActiveLobby(mockLobby);
       setLobbyPlayers([mockPlayer]);
@@ -277,6 +300,19 @@ export default function DoubleRouletteView() {
   };
 
   const handleJoinLobby = async (lobby: DBRowLobby) => {
+    if (lobby.status !== "waiting") {
+      setErrorToast("Нельзя войти в лобби — игра уже началась или завершена!");
+      setTimeout(() => setErrorToast(null), 3000);
+      return;
+    }
+
+    const playerCount = lobbyPlayerCounts[lobby.id] ?? 0;
+    if (playerCount >= lobby.max_players) {
+      setErrorToast("Лобби уже полностью заполнено!");
+      setTimeout(() => setErrorToast(null), 3000);
+      return;
+    }
+
     if (lobby.min_bet > balance) {
       setErrorToast(`Недостаточно монет! Для входа требуется минимум ${lobby.min_bet.toLocaleString()} NOD.`);
       setTimeout(() => setErrorToast(null), 3000);
@@ -311,7 +347,7 @@ export default function DoubleRouletteView() {
         setActiveLobbyId(lobby.id);
         setActiveLobby(lobby);
         fetchActiveLobbyDetails(lobby.id);
-        setInfoToast(` Вы успешно присоединились к лобби «${lobby.name}»!`);
+        setInfoToast(`✅ Вы успешно присоединились к лобби «${lobby.name}»!`);
         setTimeout(() => setInfoToast(null), 3000);
       } catch {
         setErrorToast("Не удалось войти в лобби");
@@ -323,19 +359,21 @@ export default function DoubleRouletteView() {
       setActiveLobby(lobby);
       const exists = lobbyPlayers.some((p) => p.user_id === currentUserId);
       if (!exists) {
-        setLobbyPlayers((prev) => [
+        const newPlayer: DBRowPlayer = {
+          id: "ply_" + Date.now(),
+          lobby_id: lobby.id,
+          user_id: currentUserId,
+          nickname: displayNickname,
+          bet_amount: lobby.min_bet,
+          selected_bonus_id: null,
+          is_ready: false,
+          joined_at: new Date().toISOString(),
+        };
+        setLobbyPlayers((prev) => [...prev, newPlayer]);
+        setLobbyPlayerCounts((prev) => ({
           ...prev,
-          {
-            id: "ply_" + Date.now(),
-            lobby_id: lobby.id,
-            user_id: currentUserId,
-            nickname: displayNickname,
-            bet_amount: lobby.min_bet,
-            selected_bonus_id: null,
-            is_ready: false,
-            joined_at: new Date().toISOString(),
-          },
-        ]);
+          [lobby.id]: (prev[lobby.id] ?? 0) + 1,
+        }));
       }
     }
   };
@@ -355,9 +393,72 @@ export default function DoubleRouletteView() {
     setActiveLobby(null);
     setLobbyPlayers([]);
     setHasConfirmedPick(false);
+    setBetDeducted(false);
+    setPayoutApplied(false);
     setFinalResults(null);
+    setMySelectedBonus(null);
+    setBetMode("preset");
+    setMyBetAmount(1000);
   };
 
+  // -------------------------------------------------------------
+  // DELETE LOBBY (host only)
+  // -------------------------------------------------------------
+  const handleDeleteLobby = async () => {
+    if (!activeLobby || activeLobby.host_id !== currentUserId) return;
+    if (activeLobby.status !== "waiting") {
+      setErrorToast("Нельзя удалить лобби во время игры!");
+      setTimeout(() => setErrorToast(null), 3000);
+      return;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from("nodbet_double_lobbies").delete().eq("id", activeLobby.id);
+    }
+
+    setActiveLobbyId(null);
+    setActiveLobby(null);
+    setLobbyPlayers([]);
+    setFinalResults(null);
+    setHasConfirmedPick(false);
+    setBetDeducted(false);
+    setPayoutApplied(false);
+    setInfoToast("🗑️ Лобби удалено.");
+    setTimeout(() => setInfoToast(null), 3000);
+  };
+
+  // -------------------------------------------------------------
+  // KICK PLAYER (host only)
+  // -------------------------------------------------------------
+  const handleKickPlayer = async (playerUserId: string) => {
+    if (!activeLobby || activeLobby.host_id !== currentUserId) return;
+    if (activeLobby.status !== "waiting") {
+      setErrorToast("Нельзя кикать игроков во время игры!");
+      setTimeout(() => setErrorToast(null), 3000);
+      return;
+    }
+    if (playerUserId === currentUserId) {
+      setErrorToast("Нельзя кикнуть самого себя!");
+      setTimeout(() => setErrorToast(null), 3000);
+      return;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      await supabase
+        .from("nodbet_double_lobby_players")
+        .delete()
+        .eq("lobby_id", activeLobby.id)
+        .eq("user_id", playerUserId);
+    } else {
+      setLobbyPlayers((prev) => prev.filter((p) => p.user_id !== playerUserId));
+    }
+    setInfoToast("👢 Игрок исключён из лобби.");
+    setTimeout(() => setInfoToast(null), 3000);
+  };
+
+  // -------------------------------------------------------------
+  // START GAME BY HOST
+  // -------------------------------------------------------------
   const handleStartGameByHost = async () => {
     if (!activeLobby || activeLobby.host_id !== currentUserId) return;
     if (lobbyPlayers.length < 2) {
@@ -367,6 +468,7 @@ export default function DoubleRouletteView() {
     }
 
     const timerEndsAt = new Date(Date.now() + 12000).toISOString();
+    spinAppliedRef.current = false;
 
     if (isSupabaseConfigured && supabase) {
       await supabase
@@ -374,10 +476,11 @@ export default function DoubleRouletteView() {
         .update({
           status: "betting",
           timer_ends_at: timerEndsAt,
+          winning_bonus_id: null,
         })
         .eq("id", activeLobby.id);
     } else {
-      setActiveLobby((prev) => (prev ? { ...prev, status: "betting", timer_ends_at: timerEndsAt } : null));
+      setActiveLobby((prev) => (prev ? { ...prev, status: "betting", timer_ends_at: timerEndsAt, winning_bonus_id: null } : null));
     }
   };
 
@@ -413,6 +516,7 @@ export default function DoubleRouletteView() {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLobby?.status, activeLobby?.timer_ends_at, activeLobby?.host_id, currentUserId]);
 
   const handleConfirmPick = async () => {
@@ -421,8 +525,8 @@ export default function DoubleRouletteView() {
       setTimeout(() => setErrorToast(null), 3000);
       return;
     }
-    if (myBetAmount < activeLobby?.min_bet!) {
-      setErrorToast(`Минимальная ставка в этом лобби составляет ${activeLobby?.min_bet.toLocaleString()} NOD!`);
+    if (myBetAmount < (activeLobby?.min_bet ?? 0)) {
+      setErrorToast(`Минимальная ставка в этом лобби составляет ${activeLobby?.min_bet?.toLocaleString() ?? 0} NOD!`);
       setTimeout(() => setErrorToast(null), 3000);
       return;
     }
@@ -430,6 +534,17 @@ export default function DoubleRouletteView() {
       setErrorToast("Недостаточно NOD на балансе!");
       setTimeout(() => setErrorToast(null), 3000);
       return;
+    }
+
+    // DEDUCT BET FROM BALANCE
+    if (!betDeducted) {
+      const { ok, error } = doubleRouletteDeduct(myBetAmount);
+      if (!ok) {
+        setErrorToast(error || "Ошибка списания ставки");
+        setTimeout(() => setErrorToast(null), 3000);
+        return;
+      }
+      setBetDeducted(true);
     }
 
     setHasConfirmedPick(true);
@@ -488,6 +603,10 @@ export default function DoubleRouletteView() {
       return;
     }
 
+    // Skip if we already processed this spin
+    if (spinAppliedRef.current) return;
+    spinAppliedRef.current = true;
+
     setIsSpinning(true);
     playSound("spin");
 
@@ -507,18 +626,17 @@ export default function DoubleRouletteView() {
     const tickInterval = setInterval(() => playSound("tick"), 220);
 
     // Duration is ~2x longer (6400ms vs standard 3200ms)
-    setTimeout(() => {
+    setTimeout(async () => {
       clearInterval(tickInterval);
       setIsSpinning(false);
 
       // Compute outcomes for all players in lobby
       const formattedInputs: DoublePlayerInput[] = lobbyPlayers.map((p) => {
-        // If local player didn't pick in time, fallback to random choice
         const effectiveBonus =
           p.user_id === currentUserId && !p.selected_bonus_id
             ? mySelectedBonus || pickRandomDoubleBonus()
             : p.selected_bonus_id || pickRandomDoubleBonus();
-        const effectiveBet = p.bet_amount || activeLobby.min_bet;
+        const effectiveBet = p.bet_amount || (activeLobby?.min_bet ?? 500);
 
         return {
           userId: p.user_id,
@@ -531,6 +649,20 @@ export default function DoubleRouletteView() {
       const res = computeDoubleRouletteResults(formattedInputs, winningId);
       setFinalResults(res);
 
+      // APPLY PAYOUT TO BALANCE for current user
+      if (!payoutApplied) {
+        const myRes = res.results.find((r) => r.userId === currentUserId);
+        if (myRes) {
+          if (myRes.netGain > 0) {
+            doubleRoulettePayout(myRes.payout, Math.round(myRes.payout / 20));
+          } else if (myRes.netGain < 0) {
+            // If net is negative but payout is 0, the bet was already deducted
+            // No additional deduction needed
+          }
+          setPayoutApplied(true);
+        }
+      }
+
       const myRes = res.results.find((r) => r.userId === currentUserId);
       if (myRes?.guessedCorrectly) {
         if (res.allGuessed) playSound("win");
@@ -538,16 +670,33 @@ export default function DoubleRouletteView() {
       } else {
         playSound("lose");
       }
+
+      // SET LOBBY TO "finished" so everyone knows the spin is done
+      if (isSupabaseConfigured && supabase && activeLobbyId) {
+        await supabase
+          .from("nodbet_double_lobbies")
+          .update({ status: "finished" })
+          .eq("id", activeLobbyId);
+      } else if (activeLobby) {
+        setActiveLobby((prev) => (prev ? { ...prev, status: "finished" } : null));
+      }
     }, 6400);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLobby?.status, activeLobby?.winning_bonus_id]);
 
-  // Reset lobby for another spin
+  // -------------------------------------------------------------
+  // RESET LOBBY FOR ANOTHER SPIN (host)
+  // -------------------------------------------------------------
   const handleResetLobbyByHost = async () => {
     if (!activeLobby || activeLobby.host_id !== currentUserId) return;
     setFinalResults(null);
     setHasConfirmedPick(false);
+    setBetDeducted(false);
+    setPayoutApplied(false);
     setMySelectedBonus(null);
+    setBetMode("preset");
+    setMyBetAmount(activeLobby.min_bet);
+    spinAppliedRef.current = false;
 
     if (isSupabaseConfigured && supabase) {
       // Clear player picks
@@ -556,6 +705,7 @@ export default function DoubleRouletteView() {
         .update({
           selected_bonus_id: null,
           is_ready: false,
+          bet_amount: activeLobby.min_bet,
         })
         .eq("lobby_id", activeLobby.id);
 
@@ -569,11 +719,28 @@ export default function DoubleRouletteView() {
         })
         .eq("id", activeLobby.id);
     } else {
-      setLobbyPlayers((prev) => prev.map((p) => ({ ...p, selected_bonus_id: null, is_ready: false })));
-      setActiveLobby((prev) => (prev ? { ...prev, status: "waiting", winning_bonus_id: null, timer_ends_at: null } : null));
+      setLobbyPlayers((prev) =>
+        prev.map((p) => ({ ...p, selected_bonus_id: null, is_ready: false, bet_amount: activeLobby.min_bet }))
+      );
+      setActiveLobby((prev) =>
+        prev ? { ...prev, status: "waiting", winning_bonus_id: null, timer_ends_at: null } : null
+      );
     }
   };
 
+  // Compute effective bet amount based on mode
+  const effectiveBetAmount = useMemo(() => {
+    if (betMode === "all") return balance;
+    if (betMode === "custom") {
+      const val = Math.max(activeLobby?.min_bet ?? 500, parseInt(customBetInput, 10) || (activeLobby?.min_bet ?? 500));
+      return Math.min(balance, val);
+    }
+    return myBetAmount;
+  }, [betMode, balance, customBetInput, myBetAmount, activeLobby?.min_bet]);
+
+  // -------------------------------------------------------------
+  // RENDER
+  // -------------------------------------------------------------
   return (
     <div className="space-y-8">
       {/* HEADER & TOP BANNER */}
@@ -606,12 +773,22 @@ export default function DoubleRouletteView() {
               </button>
             )}
             {activeLobbyId && (
-              <button
-                onClick={handleLeaveLobby}
-                className="inline-flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-950/40 px-5 py-3 text-xs font-bold uppercase text-red-300 hover:bg-red-900/50 cursor-pointer"
-              >
-                <LogOut size={16} /> Покинуть лобби
-              </button>
+              <>
+                <button
+                  onClick={handleLeaveLobby}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-red-500/40 bg-red-950/40 px-5 py-3 text-xs font-bold uppercase text-red-300 hover:bg-red-900/50 cursor-pointer"
+                >
+                  <LogOut size={16} /> Покинуть лобби
+                </button>
+                {activeLobby?.host_id === currentUserId && activeLobby?.status === "waiting" && (
+                  <button
+                    onClick={handleDeleteLobby}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-red-600/60 bg-red-950/60 px-5 py-3 text-xs font-bold uppercase text-red-400 hover:bg-red-900/70 cursor-pointer"
+                  >
+                    <Trash2 size={16} /> Удалить лобби
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -743,7 +920,16 @@ export default function DoubleRouletteView() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {lobbies.map((lob) => {
-                const isFull = lob.max_players <= 2; // will update with realtime player count
+                const pCount = lobbyPlayerCounts[lob.id] ?? 0;
+                const isFull = pCount >= lob.max_players;
+                const canJoin = lob.status === "waiting" && !isFull;
+
+                let statusLabel = "Ожидание";
+                let statusColor = "bg-green-500/20 text-green-400 border-green-500/30";
+                if (lob.status === "betting") { statusLabel = "Выбор (12s)"; statusColor = "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"; }
+                else if (lob.status === "spinning") { statusLabel = "Вращение"; statusColor = "bg-orange-500/20 text-orange-400 border-orange-500/30"; }
+                else if (lob.status === "finished") { statusLabel = "Завершена"; statusColor = "bg-blue-500/20 text-blue-400 border-blue-500/30"; }
+
                 return (
                   <div
                     key={lob.id}
@@ -754,12 +940,8 @@ export default function DoubleRouletteView() {
                         <span className="font-display text-base font-bold text-white truncate max-w-[180px]">
                           {lob.name}
                         </span>
-                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                          lob.status === "waiting"
-                            ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                            : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                        }`}>
-                          {lob.status === "waiting" ? "Ожидание" : lob.status === "betting" ? "Выбор (12s)" : "Вращение"}
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusColor}`}>
+                          {statusLabel}
                         </span>
                       </div>
 
@@ -771,8 +953,11 @@ export default function DoubleRouletteView() {
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-zinc-500">Формат лобби:</span>
-                          <span className="font-bold text-zinc-200">2 - {lob.max_players} игроков</span>
+                          <span className="text-zinc-500">Игроков:</span>
+                          <span className={`font-bold flex items-center gap-1 ${isFull ? "text-red-400" : "text-green-400"}`}>
+                            <Users size={12} /> {pCount} / {lob.max_players}
+                            {isFull && <span className="text-[10px] text-red-400">(Заполнено)</span>}
+                          </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-zinc-500">Мин. ставка:</span>
@@ -782,13 +967,22 @@ export default function DoubleRouletteView() {
                     </div>
 
                     <div className="mt-5 pt-3 border-t border-white/5">
-                      <button
-                        onClick={() => handleJoinLobby(lob)}
-                        disabled={lob.status !== "waiting"}
-                        className="w-full rounded-xl bg-gradient-to-r from-red-600 to-yellow-500 py-2.5 text-xs font-black uppercase text-white shadow hover:opacity-90 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                      >
-                        <Swords size={14} /> Войти в лобби
-                      </button>
+                      {canJoin ? (
+                        <button
+                          onClick={() => handleJoinLobby(lob)}
+                          className="w-full rounded-xl bg-gradient-to-r from-red-600 to-yellow-500 py-2.5 text-xs font-black uppercase text-white shadow hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Swords size={14} /> Войти в лобби
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="w-full rounded-xl bg-white/5 py-2.5 text-xs font-black uppercase text-zinc-600 cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {isFull ? <Ban size={14} /> : <Clock size={14} />}
+                          {isFull ? "Заполнено" : lob.status === "betting" ? "Идёт игра" : lob.status === "spinning" ? "Вращение..." : "Завершена"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -808,6 +1002,7 @@ export default function DoubleRouletteView() {
                     {activeLobby?.status === "waiting" && "Фаза 1: Ожидание состава игроков"}
                     {activeLobby?.status === "betting" && "Фаза 2: Скрытый выбор бонуса и ставки"}
                     {activeLobby?.status === "spinning" && "Фаза 3: Двойное вращение колеса"}
+                    {activeLobby?.status === "finished" && "Фаза 4: Результаты раунда"}
                   </span>
                   <h3 className="font-display text-2xl font-black uppercase text-white italic mt-0.5">
                     {activeLobby?.name}
@@ -943,42 +1138,96 @@ export default function DoubleRouletteView() {
                       <span>2. Сумма вашей ставки на спин</span>
                       <span className="font-mono text-yellow-400">Баланс: {balance.toLocaleString()} NOD</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="number"
-                        min={activeLobby.min_bet}
-                        max={balance}
-                        step={500}
-                        disabled={hasConfirmedPick}
-                        value={myBetAmount}
-                        onChange={(e) => setMyBetAmount(Math.max(activeLobby.min_bet, Number(e.target.value) || activeLobby.min_bet))}
-                        className="flex-1 rounded-xl border border-white/15 bg-black/60 px-4 py-3 font-mono text-base font-bold text-white focus:border-red-500 focus:outline-none"
-                      />
+
+                    {/* Bet mode buttons: ПРЕСЕТ / ПОСТАВИТЬ ВСЁ / СВОЯ */}
+                    <div className="grid grid-cols-3 gap-2">
                       <button
-                        onClick={handleConfirmPick}
-                        disabled={hasConfirmedPick || !mySelectedBonus}
-                        className={`rounded-xl px-6 py-3.5 text-xs font-black uppercase tracking-wider text-white transition-all cursor-pointer ${
-                          hasConfirmedPick
-                            ? "bg-green-600 cursor-default"
-                            : "bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 hover:scale-102 active:scale-95"
+                        onClick={() => { setBetMode("preset"); setMyBetAmount(activeLobby?.min_bet ?? 1000); }}
+                        disabled={hasConfirmedPick}
+                        className={`rounded-xl py-2.5 text-xs font-black uppercase transition-all cursor-pointer ${
+                          betMode === "preset" ? "bg-red-600 text-white shadow-md" : "bg-white/5 text-zinc-300 hover:bg-white/10"
                         }`}
                       >
-                        {hasConfirmedPick ? "✓ Выбор Готов" : "Подтвердить выбор"}
+                        Пресет
+                      </button>
+                      <button
+                        onClick={() => setBetMode("all")}
+                        disabled={hasConfirmedPick}
+                        className={`rounded-xl py-2.5 text-xs font-black uppercase transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                          betMode === "all" ? "bg-gradient-to-r from-red-600 to-yellow-500 text-white shadow-md" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                        }`}
+                      >
+                        <Flame size={14} /> ПОСТАВИТЬ ВСЁ
+                      </button>
+                      <button
+                        onClick={() => { setBetMode("custom"); setCustomBetInput(String(activeLobby?.min_bet ?? 50000)); }}
+                        disabled={hasConfirmedPick}
+                        className={`rounded-xl py-2.5 text-xs font-black uppercase transition-all cursor-pointer ${
+                          betMode === "custom" ? "bg-red-600 text-white shadow-md" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                        }`}
+                      >
+                        СВОЯ
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 pt-1">
-                      {SPIN_PRESETS.map((amt) => (
-                        <button
-                          key={amt}
+                    {/* PRESET amounts */}
+                    {betMode === "preset" && (
+                      <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 pt-1">
+                        {SPIN_PRESETS.map((amt) => (
+                          <button
+                            key={amt}
+                            disabled={hasConfirmedPick}
+                            onClick={() => setMyBetAmount(amt)}
+                            className={`rounded-lg py-1.5 font-mono text-xs font-bold transition-all cursor-pointer ${
+                              myBetAmount === amt ? "bg-red-600 text-white" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                            }`}
+                          >
+                            {amt >= 1000 ? `${amt / 1000}k` : amt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ALL IN display */}
+                    {betMode === "all" && (
+                      <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-3 text-center">
+                        <span className="font-mono text-lg font-black text-yellow-400">
+                          {balance.toLocaleString()} NOD
+                        </span>
+                        <span className="block text-[11px] text-yellow-300 font-bold mt-0.5">Весь баланс на кон!</span>
+                      </div>
+                    )}
+
+                    {/* CUSTOM input */}
+                    {betMode === "custom" && (
+                      <div className="flex items-center gap-3 bg-black/40 p-3 rounded-2xl border border-white/10">
+                        <span className="text-xs text-zinc-400 font-medium">Своя сумма (NOD):</span>
+                        <input
+                          type="number"
+                          min={activeLobby?.min_bet ?? 500}
+                          max={balance}
+                          step={500}
+                          value={customBetInput}
+                          onChange={(e) => setCustomBetInput(e.target.value)}
                           disabled={hasConfirmedPick}
-                          onClick={() => setMyBetAmount(amt)}
-                          className="rounded-lg bg-white/5 py-1.5 font-mono text-xs font-bold text-zinc-300 hover:bg-white/10"
-                        >
-                          {amt >= 1000 ? `${amt / 1000}k` : amt}
-                        </button>
-                      ))}
-                    </div>
+                          className="flex-1 rounded-xl bg-white/10 px-3 py-1.5 font-mono text-sm font-bold text-yellow-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleConfirmPick}
+                      disabled={hasConfirmedPick || !mySelectedBonus}
+                      className={`w-full rounded-xl px-6 py-3.5 text-xs font-black uppercase tracking-wider text-white transition-all cursor-pointer ${
+                        hasConfirmedPick
+                          ? "bg-green-600 cursor-default"
+                          : "bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 hover:scale-102 active:scale-95"
+                      }`}
+                    >
+                      {hasConfirmedPick
+                        ? `✓ Выбор Готов (${effectiveBetAmount.toLocaleString()} NOD списано)`
+                        : `Подтвердить выбор (${effectiveBetAmount.toLocaleString()} NOD)`}
+                    </button>
                   </div>
                 </div>
               )}
@@ -992,6 +1241,26 @@ export default function DoubleRouletteView() {
                   <p className="text-xs text-zinc-400 mt-1">
                     Шансы равны для всех игроков! Ожидаем остановки стрелки...
                   </p>
+                </div>
+              )}
+
+              {/* FINISHED PHASE - show summary before results modal */}
+              {activeLobby?.status === "finished" && !finalResults && (
+                <div className="text-center pt-4 border-t border-white/10 space-y-3">
+                  <span className="inline-flex items-center gap-2 font-display text-xl font-black uppercase text-green-400">
+                    <CheckCircle2 size={22} /> Раунд завершён!
+                  </span>
+                  <p className="text-xs text-zinc-400">
+                    Ожидайте результатов или нажмите «Сыграть ещё раунд» (только создатель лобби).
+                  </p>
+                  {activeLobby?.host_id === currentUserId && (
+                    <button
+                      onClick={handleResetLobbyByHost}
+                      className="rounded-2xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 px-8 py-3 text-sm font-black uppercase text-white shadow-xl cursor-pointer"
+                    >
+                      🔄 Сыграть ещё раунд
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1010,28 +1279,47 @@ export default function DoubleRouletteView() {
                 {lobbyPlayers.map((p) => {
                   const isMe = p.user_id === currentUserId;
                   const isHost = p.user_id === activeLobby?.host_id;
+                  const canKick =
+                    activeLobby?.host_id === currentUserId &&
+                    !isMe &&
+                    activeLobby?.status === "waiting";
 
                   return (
                     <div
                       key={p.id}
-                      className={`rounded-2xl border p-4 transition-all ${
+                      className={`rounded-2xl border p-4 transition-all relative ${
                         isMe ? "border-yellow-500/50 bg-yellow-500/10" : "border-white/10 bg-white/5"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          {isHost && <Crown size={16} className="text-yellow-400" title="Создатель лобби" />}
+                          {isHost && (
+                            <span title="Создатель лобби">
+                              <Crown size={16} className="text-yellow-400" />
+                            </span>
+                          )}
                           <span className="font-bold text-white text-sm">
                             {p.nickname} {isMe && <b className="text-yellow-400 text-xs font-normal">(Вы)</b>}
                           </span>
                         </div>
-                        {p.is_ready ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-green-400">
-                            <CheckCircle2 size={13} /> Готов
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-bold text-zinc-500">Выбирает...</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {p.is_ready ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-green-400">
+                              <CheckCircle2 size={13} /> Готов
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-zinc-500">Выбирает...</span>
+                          )}
+                          {canKick && (
+                            <button
+                              onClick={() => handleKickPlayer(p.user_id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/40 px-2 py-1 text-[10px] font-bold text-red-300 hover:bg-red-900/60 cursor-pointer"
+                              title="Выгнать игрока"
+                            >
+                              <UserMinus size={12} />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-xs">
