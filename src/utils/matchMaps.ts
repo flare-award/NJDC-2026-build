@@ -8,6 +8,23 @@ import type { Match, MatchFormat, MatchMap } from "../types";
 //
 //  К каждой карте теперь можно прикрепить свою ссылку на CYBERSHOKE
 //  (для Bo2/Bo3 — отдельная на каждую катку).
+//
+//  ПРАВИЛА CS2 (MR12 + овертаймы MR3 «до 4 побед в блоке»):
+//    Регулярка: первая команда, набравшая 13 раундов, побеждает,
+//    НО только если у соперника ≤ 11. Счёт 12:12 = ничья по
+//    регулярке → начинается овертайм.
+//    Овертайм №n (n≥1): играется блок, цель — набрать 13+3n
+//    раундов (1-й ОТ — до 16, 2-й — до 19, 3-й — до 22 …).
+//    Проигравший в ОТ набирает от (цель−4) до (цель−2).
+//    Равенство в блоке (15:15, 18:18, 21:21 …) = следующий ОТ.
+//
+//  Примеры ФИНАЛЬНЫХ счётов:
+//    13:11, 11:13  — регулярка (без ОТ)
+//    12:16, 16:14  — 1-й овертайм
+//    19:17, 15:19  — 2-й овертайм
+//    22:20, 18:22  — 3-й овертайм
+//    12:12, 15:15, 18:18 — игра ещё идёт (начался следующий ОТ)
+//    6:8, 12:11    — игра ещё идёт (регулярка)
 // ============================================================
 
 /** Максимальное число карт для формата. */
@@ -17,22 +34,96 @@ export function maxMapCount(format: MatchFormat): number {
   return 3; // bo3
 }
 
-/** Овертайм на карте = у кого-то больше 13 раундов (16:14, 12:16 и т.п.). */
-export function mapHadOvertime(map: MatchMap): boolean {
-  return map.score_a > 13 || map.score_b > 13;
+interface MapAnalysis {
+  /** Введён ли хоть какой-то счёт (раунд > 0). */
+  started: boolean;
+  /** Достигнут ли корректный ФИНАЛЬНЫЙ счёт по правилам CS2. */
+  finished: boolean;
+  /** Номер овертайма, если карта дошла до ОТ (1, 2, 3 …), иначе 0. */
+  overtimeNumber: number;
+  /** Победитель карты: 'a' | 'b' | null. null, если карта не завершена. */
+  winner: "a" | "b" | null;
 }
 
-/** Победитель карты: 'a' | 'b' | null (карта не сыграна / ничья по раундам). */
-export function mapWinner(map: MatchMap): "a" | "b" | null {
-  if (map.score_a === 0 && map.score_b === 0) return null; // не сыграна
-  if (map.score_a > map.score_b) return "a";
-  if (map.score_b > map.score_a) return "b";
-  return null; // равенство раундов — не считаем победителя карты
+/**
+ * Полный анализ счёта одной карты по правилам CS2 MR12 + MR3.
+ */
+export function analyzeMap(map: MatchMap): MapAnalysis {
+  const a = Math.max(0, Math.floor(map.score_a || 0));
+  const b = Math.max(0, Math.floor(map.score_b || 0));
+
+  if (a === 0 && b === 0) {
+    return { started: false, finished: false, overtimeNumber: 0, winner: null };
+  }
+
+  const hi = Math.max(a, b);
+  const lo = Math.min(a, b);
+
+  // Регулярка: победил тот, кто первый взял 13, и у соперника ≤ 11.
+  if (hi === 13 && lo <= 11) {
+    return { started: true, finished: true, overtimeNumber: 0, winner: a > b ? "a" : "b" };
+  }
+
+  // Овертаймы: hi должно быть 16, 19, 22 … (то есть 13 + 3n, n≥1),
+  // а отрыв победителя — 2, 3 или 4 раунда (lo ∈ [hi−4, hi−2]).
+  if (hi >= 16 && (hi - 13) % 3 === 0) {
+    const n = (hi - 13) / 3; // номер овертайма
+    if (lo >= hi - 4 && lo <= hi - 2) {
+      return { started: true, finished: true, overtimeNumber: n, winner: a > b ? "a" : "b" };
+    }
+  }
+
+  // Любой другой счёт — карта ещё не доиграна (идёт регулярка или овертайм).
+  return { started: true, finished: false, overtimeNumber: 0, winner: null };
 }
 
-/** Сыграна ли карта (есть ли счёт). */
+/** Была ли карта начата (есть хоть один раунд). */
+export function mapStarted(map: MatchMap): boolean {
+  return analyzeMap(map).started;
+}
+
+/**
+ * Сыграна ли карта ДО КОНЦА (корректный финальный счёт по правилам CS2).
+ * ВНИМАНИЕ: это НЕ «введён ли счёт» — счёт 6:8 НЕ считается сыгранным.
+ */
 export function mapPlayed(map: MatchMap): boolean {
-  return map.score_a !== 0 || map.score_b !== 0;
+  return analyzeMap(map).finished;
+}
+
+/** Алиас mapPlayed — карта завершена по правилам. */
+export function mapFinished(map: MatchMap): boolean {
+  return analyzeMap(map).finished;
+}
+
+/**
+ * Был ли овертайм на карте (используется для ставок и бейджа).
+ *
+ * Овертайм засчитывается ТОЛЬКО если счёт БОЛЬШЕ 12:12 — то есть обе
+ * команды дошли до 12 раундов (регулярка завершилась вничью 12:12)
+ * и игра ушла дальше (хотя бы у одной команды 13+).
+ *
+ *   • 12:12 и меньше (12:11, 11:13, 13:11, 6:8 …) → овертайма НЕТ.
+ *   • Больше 12:12 (13:12, 14:13, 16:14, 19:17 …) → овертайм ЕСТЬ.
+ *
+ * Регулярная победа 13:x (x ≤ 11) НЕ считается овертаймом: у проигравшего
+ * меньше 12 раундов, то есть до 12:12 дело не дошло. Это работает и для
+ * завершённых, и для идущих карт.
+ */
+export function mapHadOvertime(map: MatchMap): boolean {
+  const a = Math.max(0, Math.floor(map.score_a || 0));
+  const b = Math.max(0, Math.floor(map.score_b || 0));
+  // Овертайм = обе команды взяли ≥ 12 раундов И счёт ушёл дальше ровно 12:12.
+  return Math.min(a, b) >= 12 && Math.max(a, b) > 12;
+}
+
+/** Номер овертайма (0 = регулярка/не завершено). */
+export function mapOvertimeNumber(map: MatchMap): number {
+  return analyzeMap(map).overtimeNumber;
+}
+
+/** Победитель карты: 'a' | 'b' | null (карта не завершена). */
+export function mapWinner(map: MatchMap): "a" | "b" | null {
+  return analyzeMap(map).winner;
 }
 
 /**
@@ -93,7 +184,7 @@ export function relevantMapCount(match: Match): number {
   return 3;
 }
 
-/** Счёт серии (карт выиграно). */
+/** Счёт серии (карт выиграно). Считаем только ЗАВЕРШЁННЫЕ карты. */
 export function seriesScore(match: Match): { a: number; b: number } {
   const maps = normalizeMaps(match);
   let a = 0;
