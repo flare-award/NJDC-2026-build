@@ -14,7 +14,7 @@ import {
   type BonusId,
   type StreakMap,
 } from "../utils/roulette";
-import { normalizeMaps, mapWinner, mapPlayed, mapHadOvertime, relevantMapCount } from "../utils/matchMaps";
+import { normalizeMaps, mapWinner, mapPlayed, mapHadOvertime, maxMapCount, relevantMapCount } from "../utils/matchMaps";
 
 // ============================================================
 // Привилегии магазина
@@ -665,58 +665,35 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         if (bet.status !== "pending") return bet;
         const match = matches.find((m) => m.id === bet.matchId);
         if (!match || match.status !== "finished") return bet;
-        if (!match.team_a || !match.team_b) return bet;
 
         const maps = normalizeMaps(match);
         const map = maps[bet.mapIndex];
         if (!map || !mapPlayed(map)) {
-          // legacy fallback for bo1 (when maps not populated but score_a/score_b on match)
-          if (match.format === "bo1" && (match.score_a || match.score_b)) {
-            const legacyWinStr = match.score_a > match.score_b ? "a" : match.score_b > match.score_a ? "b" : null;
-            const legacyWinnerId = legacyWinStr === "a" ? match.team_a : legacyWinStr === "b" ? match.team_b : null;
-            const legacyOT = (match.score_a > 13 || match.score_b > 13);
-            if (bet.overtimePrediction !== legacyOT) {
-              changed = true;
-              return { ...bet, status: "lost" as const, payout: 0 };
-            }
-            if (legacyWinnerId && legacyWinnerId === bet.teamChoice) {
-              changed = true;
-              const wonCoins = Math.round(bet.amount * bet.odds);
-              addedBalance += wonCoins;
-              addedXp += Math.round((wonCoins / 20) * (prev.inventory.coinMagnet ? 1.1 : 1));
-              return { ...bet, status: "won" as const, payout: wonCoins };
-            }
-            changed = true;
-            return { ...bet, status: "lost" as const, payout: 0 };
-          }
-          const rel = relevantMapCount(match);
-          if (bet.mapIndex >= rel || match.status === "finished") {
-            // if finished but map not scored (or beyond relevant) — refund to avoid stuck pending bets
+          if (bet.mapIndex >= relevantMapCount(match)) {
             changed = true;
             addedBalance += bet.amount;
-            return { ...bet, status: "refunded" as const, payout: bet.amount };
+            return { ...bet, status: "refunded", payout: bet.amount };
           }
           return bet;
         }
 
-        const winnerStr = mapWinner(map);
+        const winner = mapWinner(map);
         const actualOvertime = mapHadOvertime(map);
         if (bet.overtimePrediction !== actualOvertime) {
           changed = true;
-          return { ...bet, status: "lost" as const, payout: 0 };
+          return { ...bet, status: "lost", payout: 0 };
         }
 
-        const winnerTeamId = winnerStr === "a" ? match.team_a : winnerStr === "b" ? match.team_b : null;
-        if (winnerTeamId && winnerTeamId === bet.teamChoice) {
+        if (winner && winner === bet.teamChoice) {
           changed = true;
           const wonCoins = Math.round(bet.amount * bet.odds);
           addedBalance += wonCoins;
           addedXp += Math.round((wonCoins / 20) * (prev.inventory.coinMagnet ? 1.1 : 1));
-          return { ...bet, status: "won" as const, payout: wonCoins };
+          return { ...bet, status: "won", payout: wonCoins };
         }
 
         changed = true;
-        return { ...bet, status: "lost" as const, payout: 0 };
+        return { ...bet, status: "lost", payout: 0 };
       });
 
       if (!changed) return prev;
@@ -997,10 +974,12 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         return { ok: false, results: [] as RouletteSpin[], error: "Недостаточно NOD-Коинов для этого спина!" };
       }
 
+      const results: RouletteSpin[] = [];
+      let workingStreak = state.streak;
+
       const isDoubleActive = state.inventory.doubleSpin && state.inventory.doubleSpinEnabled;
       const spinCount = isDoubleActive ? 2 : 1;
-      const totalStake = betAmount * spinCount;
-      if (totalStake > state.balance) {
+      if (betAmount * spinCount > state.balance) {
         return {
           ok: false,
           results: [],
@@ -1008,85 +987,21 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      // === КРИТИЧЕСКИЕ ФИКСЫ СИНХРОНИЗАЦИИ ===
-      // 1. Сразу списываем полную ставку (риск) — даже если юзер обновит страницу во время анимации
-      // 2. Сразу начисляем выигрыш (полный payout)
-      // Это решает "обновил — коины не засчитались"
-      let balanceAfterStake = state.balance;
-      if (betAmount > 0) {
-        balanceAfterStake = Math.max(0, state.balance - totalStake);
-      }
-
-      const results: RouletteSpin[] = [];
-      let workingStreak = state.streak;
-      let totalCredit = 0;
-
       for (let i = 0; i < spinCount; i++) {
         const bonusId = pickBonus(workingStreak);
         const def = BONUSES[bonusId] || BONUSES.normal;
-        const { payout } = computeSpinResult(bonusId, betAmount); // payout = полная сумма к зачислению
+        const { delta } = computeSpinResult(bonusId, betAmount);
         workingStreak = updateStreak(workingStreak, bonusId);
-
-        // Для отрицательных: payout=0 (ставка уже списана)
-        const credit = Math.max(0, payout);
-        totalCredit += credit;
 
         results.push({
           id: "spin_" + crypto.randomUUID().slice(0, 8),
           bonusId,
           label: def.label,
           multiplier: def.multiplier,
-          wonCoins: credit, // именно то, что будет зачислено
+          wonCoins: delta,
           isNegative: def.isNegative,
           createdAt: new Date().toISOString(),
         });
-      }
-
-      const newBalance = Math.max(0, balanceAfterStake + totalCredit);
-
-      // Применяем изменения СРАЗУ (атомарно для этого спина)
-      setState((prev) => ({
-        ...prev,
-        balance: newBalance,
-        streak: workingStreak,
-        // Сразу добавляем в историю — даже если потом обновят страницу
-        rouletteHistory: [...results, ...prev.rouletteHistory].slice(0, 30),
-      }));
-
-      // === МГНОВЕННЫЙ И НАДЁЖНЫЙ СИНХРОН ===
-      if (isSupabaseConfigured && supabase && user) {
-        const uid = user.id;
-        const totalWonNow = totalWonOf(state.bets, newBalance);
-        const newXp = state.xp;
-
-        // 1. Профиль
-        (async () => {
-          try {
-            await supabase.from("nodbet_profiles").upsert({
-              user_id: uid,
-              balance: newBalance,
-              xp: newXp,
-              total_won: totalWonNow,
-              bets_count: state.bets.length + (state.rouletteHistory.length + results.length),
-            });
-          } catch {}
-        })();
-
-        // 2. Спины в историю
-        if (results.length) {
-          const spinsToSave = results.map((s) => spinToRow(uid, s));
-          (async () => {
-            try {
-              await supabase.from("nodbet_roulette_spins").upsert(spinsToSave);
-            } catch {}
-          })();
-        }
-
-        // 3. Обновляем топ
-        setTimeout(() => {
-          loadProfiles();
-          if (user) loadOwnData(user.id).catch(() => {});
-        }, 80);
       }
 
       return { ok: true, results };
@@ -1097,16 +1012,12 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   const commitSpin = useCallback(
     (results: RouletteSpin[]) => {
       if (!results.length) return;
-
-      // Balance & streak already updated in spinRoulette (critical sync fix).
-      // commitSpin now only:
-      // - records history
-      // - adds XP
-      // - forces immediate Supabase sync + leaderboard refresh
+      let balanceDelta = 0;
       let xpGain = 0;
       let workingStreak = state.streak;
 
       for (const r of results) {
+        balanceDelta += r.wonCoins;
         xpGain += r.isNegative ? 20 : 60;
         workingStreak = updateStreak(workingStreak, r.bonusId);
       }
@@ -1115,40 +1026,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
       setState((prev) => ({
         ...prev,
+        balance: Math.max(0, prev.balance + balanceDelta),
         xp: prev.xp + Math.round(xpGain * magnet),
         streak: workingStreak,
         rouletteHistory: [...results, ...prev.rouletteHistory].slice(0, 30),
       }));
-
-      // === СИЛЬНЫЙ СИНХРОН: сразу пишем в БД + перезагружаем топ ===
-      if (isSupabaseConfigured && supabase && user) {
-        const uid = user.id;
-        const finalBalance = state.balance; // already updated in spinRoulette
-        const totalWon = totalWonOf(state.bets, finalBalance);
-
-        // fire-and-forget but with retry feel
-        (async () => {
-          try {
-            await supabase.from("nodbet_profiles").upsert({
-              user_id: uid,
-              balance: finalBalance,
-              xp: state.xp + Math.round(xpGain * magnet),
-              total_won: totalWon,
-              bets_count: state.bets.length + state.rouletteHistory.length + results.length,
-            });
-
-            // Immediately refresh profiles so Top Хайроллеров обновляется для всех
-            await loadProfiles();
-            console.log("[NODBET] commitSpin: profile + leaderboard synced");
-          } catch (e) {
-            console.error("[NODBET] commitSpin Supabase sync error", e);
-            // Still try to reload profiles once more
-            setTimeout(() => loadProfiles(), 800);
-          }
-        })();
-      }
     },
-    [state.streak, state.inventory.coinMagnet, state.balance, state.xp, state.bets, state.rouletteHistory, user, loadProfiles]
+    [state.streak, state.inventory.coinMagnet]
   );
 
   // ---------- Магазин ----------
