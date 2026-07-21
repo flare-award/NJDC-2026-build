@@ -4,7 +4,7 @@ import { useData } from "../../context/DataContext";
 import type { Match, MatchFormat, MatchStatus, MatchMap } from "../../types";
 import { inputClass, labelClass, btnPrimary, btnGhost, btnDanger } from "./adminStyles";
 import { STAGE_LABELS } from "../../utils/scoring";
-import { maxMapCount, normalizeMaps, withRecomputedSeries, mapHadOvertime, mapWinner } from "../../utils/matchMaps";
+import { maxMapCount, normalizeMaps, withRecomputedSeries, mapHadOvertime, mapWinner, mapStarted, mapFinished } from "../../utils/matchMaps";
 
 function emptyMatch(): Match {
   return {
@@ -236,7 +236,13 @@ export default function MatchesTab() {
                           title="Раунды команды B"
                         />
                         <span className="text-[11px] text-zinc-500">
-                          {w ? `Победа ${w === "a" ? "A" : "B"}` : "не сыграна"}
+                          {w
+                            ? `Победа ${w === "a" ? "A" : "B"}`
+                            : mapFinished(mp)
+                            ? "ничья"
+                            : mapStarted(mp)
+                            ? "идёт (счёт не финальный)"
+                            : "не сыграна"}
                           {ot ? " · ОВЕРТАЙМ" : ""}
                           {isBo3Third ? " · нужна только при счёте 1:1" : ""}
                         </span>
@@ -256,7 +262,10 @@ export default function MatchesTab() {
               </div>
               <p className="mt-2 text-xs text-zinc-500">
                 Для Bo2 и Bo3 теперь можно указать отдельную ссылку CYBERSHOKE на каждую катку. Если оставите пустым — будет использована общая ссылка матча.
-                Овертайм определяется автоматически: если у команды больше 13 раундов. Счёт серии считается сам.
+                <br />
+                <b className="text-zinc-400">Счёт катки засчитывается автоматически по правилам CS2 (MR12 + овертаймы):</b> карта «сыграна» только при корректном финальном счёте —
+                регулярка <b>13:x</b> (x ≤ 11), 1-й овертайм до <b>16</b>, 2-й до <b>19</b>, 3-й до <b>22</b> и т.д. Промежуточные счёта (6:8, 12:12…) — катка ещё идёт, ставка не рассчитывается.
+                Овертайм и победитель определяются сами. Счёт серии считается сам.
               </p>
             </div>
             <div className="sm:col-span-3">

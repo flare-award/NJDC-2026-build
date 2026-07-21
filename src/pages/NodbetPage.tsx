@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Flame,
@@ -13,10 +13,18 @@ import {
   History,
   Crown,
   ShieldCheck,
+  X,
 } from "lucide-react";
-import { useNodbet, NODBET_PERKS, buildWheelSectors, type NodbetPerk, type RouletteSpin } from "../context/NodbetContext";
+import { useNodbet, NODBET_PERKS, type NodbetPerk, type RouletteSpin } from "../context/NodbetContext";
 import { useData } from "../context/DataContext";
-import { BONUS_ORDER, BONUSES, wheelGradient } from "../utils/roulette";
+import {
+  BONUSES,
+  ROULETTE_PRESETS,
+  activeSectors,
+  buildWheelSectors,
+  wheelGradient,
+  type RouletteMode,
+} from "../utils/roulette";
 import { maxMapCount } from "../utils/matchMaps";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
@@ -38,6 +46,7 @@ export default function NodbetPage() {
     rouletteHistory,
     highRollers,
     placeBet,
+    cancelBet,
     spinRoulette,
     commitSpin,
     buyPerk,
@@ -51,7 +60,12 @@ export default function NodbetPage() {
   } = useNodbet();
 
   const { matches, teams } = useData();
-  const [activeTab, setActiveTab] = useState<"roulette" | "line" | "shop" | "my_bets" | "leaderboard">("roulette");
+  const [activeTab, setActiveTab] = useState<"roulette" | "allornothing" | "line" | "shop" | "my_bets" | "leaderboard">("roulette");
+
+  /** Активный режим рулетки определяется выбранной вкладкой. */
+  const rouletteMode: RouletteMode = activeTab === "allornothing" ? "allornothing" : "classic";
+  /** Дабл-спин работает только в классическом режиме. */
+  const effectiveDoubleSpin = rouletteMode === "classic" && doubleSpinActive;
 
   // Roulette state
   const [spinMode, setSpinMode] = useState<"preset" | "free" | "custom" | "all">("preset");
@@ -120,8 +134,9 @@ export default function NodbetPage() {
     return spinBetAmount;
   }, [spinMode, balance, customSpin, spinBetAmount]);
 
-  const wheelSectors = useMemo(() => buildWheelSectors(), []);
+  const wheelSectors = useMemo(() => buildWheelSectors(rouletteMode), [rouletteMode]);
   const wheelBg = useMemo(() => wheelGradient(wheelSectors), [wheelSectors]);
+  const activeSectorIds = useMemo(() => activeSectors(rouletteMode), [rouletteMode]);
 
   const activeMatch = useMemo(() => matches.find((m) => m.id === selectedMatchId), [matches, selectedMatchId]);
 
@@ -183,7 +198,7 @@ export default function NodbetPage() {
     setLastSpinResults(null);
 
     // Генерируем результаты спина без изменения баланса до окончания анимации (пункт 3)
-    const { ok, results, error } = spinRoulette(amount);
+    const { ok, results, error } = spinRoulette(amount, rouletteMode);
     if (!ok || !results.length) {
       setIsSpinning(false);
       setBetErrorToast(error || "Ошибка вращения");
@@ -250,6 +265,18 @@ export default function NodbetPage() {
     );
     setTimeout(() => setBetSuccessToast(null), 4000);
     setOvertimePick(null);
+  };
+
+  const handleCancelBet = (betId: string) => {
+    const { ok, error, refund } = cancelBet(betId);
+    if (!ok) {
+      setBetErrorToast(error || "Не удалось отменить ставку");
+      setTimeout(() => setBetErrorToast(null), 3500);
+      return;
+    }
+    playSound("bet");
+    setBetSuccessToast(`↩️ Ставка отменена. Вам возвращено ${refund?.toLocaleString()} NOD на баланс.`);
+    setTimeout(() => setBetSuccessToast(null), 4000);
   };
 
   const handleBuyPerk = (perkId: NodbetPerk["id"]) => {
@@ -450,6 +477,7 @@ export default function NodbetPage() {
             <div className="flex items-center gap-1.5">
               {[
                 { key: "roulette", label: "🎰 Клатч-Рулетка", desc: "Честное колесо и фри-спин" },
+                { key: "allornothing", label: "🎲 Всё или ничего", desc: "50% Джекпот · 50% Неудача" },
                 { key: "line", label: "⚡ Линия ставок", desc: `Боевые линии · ${matches.length} игр` },
                 { key: "shop", label: "👑 Магазин", desc: "Честные привилегии" },
                 { key: "my_bets", label: "📜 Мои ставки", desc: `В игре: ${pendingBets.length}` },
@@ -474,8 +502,8 @@ export default function NodbetPage() {
 
       {/* MAIN CONTENT AREA */}
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        {/* ======================= TAB 1: ROULETTE ======================= */}
-        {activeTab === "roulette" && (
+        {/* ======================= TAB 1: ROULETTE (classic + allornothing) ======================= */}
+        {(activeTab === "roulette" || activeTab === "allornothing") && (
           <div className="grid gap-10 lg:grid-cols-12 items-start">
             {/* WHEEL CONTROLLER */}
             <div className="lg:col-span-7 rounded-3xl border border-red-500/20 bg-[#141414] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
@@ -483,18 +511,30 @@ export default function NodbetPage() {
 
               <div className="text-center">
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/30 px-3 py-1 text-xs font-bold text-yellow-400 uppercase tracking-widest">
-                  Честная рулетка · NODBET v3
+                  {rouletteMode === "allornothing" ? "Всё или ничего · NODBET" : "Честная рулетка · NODBET v3"}
                 </span>
                 <h2 className="mt-3 font-display text-2xl sm:text-3xl font-black italic uppercase text-white tracking-tight">
-                  Колесо <span className="text-yellow-400">Клатч-Фортуны</span>
+                  {rouletteMode === "allornothing" ? (
+                    <>Колесо <span className="text-yellow-400">Всё или ничего</span></>
+                  ) : (
+                    <>Колесо <span className="text-yellow-400">Клатч-Фортуны</span></>
+                  )}
                 </h2>
                 <p className="mt-1 text-xs text-zinc-400">
-                  Честное колесо: можно и выиграть, и потерять. Чем выше ставка — тем крупнее и куш, и риск.
-                  {doubleSpinActive && <b className="text-purple-300"> Дабл спин ВКЛ — колесо крутится дважды!</b>}
-                  {hasDoubleSpin && !doubleSpinActive && <b className="text-zinc-500"> Дабл спин выключен (включите тумблер ниже).</b>}
+                  {rouletteMode === "allornothing" ? (
+                    <>
+                      Только два сектора: <b className="text-green-400">50% — Джекпот x5.0</b>, <b className="text-red-400">50% — Неудача (−100%)</b>. Ставка на кону целиком — либо x5, либо ноль.
+                    </>
+                  ) : (
+                    <>
+                      Честное колесо: можно и выиграть, и потерять. Чем выше ставка — тем крупнее и куш, и риск.
+                      {doubleSpinActive && <b className="text-purple-300"> Дабл спин ВКЛ — колесо крутится дважды!</b>}
+                      {hasDoubleSpin && !doubleSpinActive && <b className="text-zinc-500"> Дабл спин выключен (включите тумблер ниже).</b>}
+                    </>
+                  )}
                 </p>
 
-                {hasDoubleSpin && (
+                {rouletteMode === "classic" && hasDoubleSpin && (
                   <div className="mt-3 flex items-center justify-center gap-3 rounded-xl bg-purple-500/10 border border-purple-500/30 px-4 py-2.5">
                     <span className="text-xs font-bold text-purple-300">🎡 Дабл спин:</span>
                     <button
@@ -557,8 +597,8 @@ export default function NodbetPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-zinc-400">
                   <span>Выберите ставку на спин</span>
                   <span className="text-yellow-400 font-mono">
-                    К списанию: {effectiveSpinAmount > 0 ? `${(effectiveSpinAmount * (doubleSpinActive ? 2 : 1)).toLocaleString()} NOD` : "ФРИ-СПИН (0 NOD)"}
-                    {doubleSpinActive && effectiveSpinAmount > 0 ? " (x2 спина)" : ""}
+                    К списанию: {effectiveSpinAmount > 0 ? `${(effectiveSpinAmount * (effectiveDoubleSpin ? 2 : 1)).toLocaleString()} NOD` : "ФРИ-СПИН (0 NOD)"}
+                    {effectiveDoubleSpin && effectiveSpinAmount > 0 ? " (x2 спина)" : ""}
                   </span>
                 </div>
 
@@ -674,8 +714,9 @@ export default function NodbetPage() {
                   <h3 className="font-display text-lg font-bold text-white">Таблица выплат (Честные шансы)</h3>
                 </div>
                 <div className="space-y-2.5">
-                  {BONUS_ORDER.map((id) => {
+                  {activeSectorIds.map((id) => {
                     const b = BONUSES[id];
+                    const weight = ROULETTE_PRESETS[rouletteMode].weights[id];
                     return (
                       <div key={b.id} className="flex items-center justify-between rounded-xl bg-white/5 p-3.5 border border-white/5">
                         <div className="flex items-center gap-3">
@@ -688,18 +729,31 @@ export default function NodbetPage() {
                           </div>
                         </div>
                         <span className="font-mono text-xs font-black px-2.5 py-1 rounded bg-black/50 border border-white/10 shrink-0 text-yellow-300">
-                          {b.baseWeight}% шанс
+                          {weight}% шанс
                         </span>
                       </div>
                     );
                   })}
                 </div>
                 <div className="mt-4 p-3.5 rounded-2xl bg-yellow-500/10 border border-yellow-500/30 text-xs text-zinc-300 space-y-1">
-                  <p className="font-bold text-yellow-400">⚖️ Как работает честная рулетка (исправлено):</p>
-                  <p>1. Шансы строго 12% 💀 / 38% ⚫ / 22% 🔴 / 18% 🟣 / 10% 🟢 — как написано, без подкрутки.</p>
-                  <p>2. Пример на ставке 5000 NOD: ⚫ x1.25 → возврат 6250 (прибыль +1250), 🔴 x1.8 → 9000 (+4000), 🟣 x2.5 → 12500 (+7500), 🟢 x5.0 → 25000 (+20000).</p>
-                  <p>3. 💀 забирает всю ставку на спин. На фри-спине (0 NOD) даёт 50/100/250/600 без риска.</p>
-                  <p>4. Дабл спин можно включать/выключать тумблером выше, если куплен в магазине.</p>
+                  <p className="font-bold text-yellow-400">
+                    ⚖️ Как работает {rouletteMode === "allornothing" ? "«Всё или ничего»" : "честная рулетка"}:
+                  </p>
+                  {rouletteMode === "allornothing" ? (
+                    <>
+                      <p>1. Ровно 2 сектора по 50%: 🟢 ДЖЕКПОТ (x5.0) и ❌ Неудача (−100% ставки).</p>
+                      <p>2. Пример на ставке 5000 NOD: 🟢 Джекпот → возврат 25 000 (прибыль +20 000); ❌ Неудача → теряете все 5000.</p>
+                      <p>3. На фри-спине (0 NOD): Джекпот даёт 600 NOD, Неудача — 0.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>1. Шансы строго 5% 💀 / 10% 🟤 / 40% ⚫ / 20% 🔴 / 15% 🟣 / 10% 🟢 — как написано, без подкрутки. Размеры секторов колеса совпадают с шансами.</p>
+                      <p>2. Пример на ставке 5000 NOD: ⚫ x1.25 → возврат 6250 (прибыль +1250), 🔴 x1.8 → 9000 (+4000), 🟣 x2.5 → 12500 (+7500), 🟢 x5.0 → 25000 (+20000).</p>
+                      <p>3. 💀 забирает всю ставку, 🟤 — половину ставки. На фри-спине (0 NOD) даёт 50/100/250/600 без риска.</p>
+                      <p>4. Дабл спин можно включать/выключать тумблером выше, если куплен в магазине.</p>
+                    </>
+                  )}
+                  <p className="text-zinc-500 pt-1">Прибыль и списание применяются ТОЛЬКО после остановки колеса.</p>
                 </div>
               </div>
             </div>
@@ -866,7 +920,7 @@ export default function NodbetPage() {
                         <HelpCircle size={14} /> Обязательный прогноз: Овертайм на карте?
                       </div>
                       <p className="text-[11px] leading-snug text-zinc-300">
-                        Считается, что овертайм был, если одна из команд набрала &gt; 13 раундов. При ошибке в прогнозе ставка сгорает.
+                        Овертайм засчитывается, только если счёт больше 12:12 (обе команды набрали 12+ раундов и игра ушла дальше). Регулярная победа 13:x (x ≤ 11) — без овертайма. При ошибке в прогнозе ставка сгорает.
                       </p>
                       <div className="grid grid-cols-2 gap-2 pt-1">
                         <button
@@ -883,7 +937,7 @@ export default function NodbetPage() {
                             overtimePick === false ? "bg-yellow-400 text-black border-yellow-400 font-black shadow" : "bg-black/40 text-zinc-300 border-white/10 hover:border-white/30"
                           }`}
                         >
-                          🛡️ Нет (&le;13 раундов)
+                          🛡️ Нет (≤ 12:12)
                         </button>
                       </div>
                     </div>
@@ -1044,26 +1098,41 @@ export default function NodbetPage() {
                       <Clock size={14} /> В игре ({pendingBets.length})
                     </h4>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {pendingBets.map((b) => (
-                        <div key={b.id} className="rounded-xl border border-yellow-500/30 bg-[#161414] p-4 flex flex-col justify-between">
-                          <div>
-                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                              <span>{b.matchTitle}</span>
-                              <span className="font-mono text-yellow-400">Карта {b.mapIndex + 1}</span>
+                      {pendingBets.map((b) => {
+                        const matchStatus = matches.find((m) => m.id === b.matchId)?.status;
+                        const canCancel = matchStatus === "upcoming";
+                        return (
+                          <div key={b.id} className="rounded-xl border border-yellow-500/30 bg-[#161414] p-4 flex flex-col justify-between">
+                            <div>
+                              <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                                <span>{b.matchTitle}</span>
+                                <span className="font-mono text-yellow-400">Карта {b.mapIndex + 1}</span>
+                              </div>
+                              <div className="font-bold text-white text-sm">
+                                Прогноз: <span className="text-yellow-400">{b.teamName}</span> (x{b.odds.toFixed(2)})
+                              </div>
+                              <div className="mt-1 text-[11px] text-zinc-400">
+                                Овертайм: <b className={b.overtimePrediction ? "text-yellow-300" : "text-zinc-300"}>{b.overtimePrediction ? "⚡ Будет (>12:12)" : "🛡️ Нет (≤ 12:12)"}</b>
+                              </div>
                             </div>
-                            <div className="font-bold text-white text-sm">
-                              Прогноз: <span className="text-yellow-400">{b.teamName}</span> (x{b.odds.toFixed(2)})
+                            <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center font-mono text-xs">
+                              <span className="text-zinc-400">Ставка: {b.amount.toLocaleString()} NOD</span>
+                              <span className="text-green-400 font-bold">Выплата: {Math.round(b.amount * b.odds).toLocaleString()} NOD</span>
                             </div>
-                            <div className="mt-1 text-[11px] text-zinc-400">
-                              Овертайм: <b className={b.overtimePrediction ? "text-yellow-300" : "text-zinc-300"}>{b.overtimePrediction ? "⚡ Будет (>13)" : "🛡️ Нет (≤13)"}</b>
-                            </div>
+                            {canCancel ? (
+                              <button
+                                onClick={() => handleCancelBet(b.id)}
+                                className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] font-bold text-red-300 hover:bg-red-500/20 transition-colors cursor-pointer"
+                                title="Отменить ставку (матч ещё не начался)"
+                              >
+                                <X size={13} /> Отменить ставку · вернуть {b.amount.toLocaleString()} NOD
+                              </button>
+                            ) : (
+                              <p className="mt-3 text-[11px] text-zinc-600">Отмена недоступна: матч уже идёт или завершён.</p>
+                            )}
                           </div>
-                          <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center font-mono text-xs">
-                            <span className="text-zinc-400">Ставка: {b.amount.toLocaleString()} NOD</span>
-                            <span className="text-green-400 font-bold">Выплата: {Math.round(b.amount * b.odds).toLocaleString()} NOD</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1084,6 +1153,7 @@ export default function NodbetPage() {
                             {b.status === "won" && <span className="text-green-400 font-bold">+{b.payout.toLocaleString()} NOD ✓</span>}
                             {b.status === "lost" && <span className="text-red-400 font-bold">−{b.amount.toLocaleString()} NOD ✕</span>}
                             {b.status === "refunded" && <span className="text-yellow-400 font-bold">Возврат ({b.amount.toLocaleString()} NOD)</span>}
+                            {b.status === "cancelled" && <span className="text-zinc-400 font-bold">Отменена · возврат {b.amount.toLocaleString()} NOD</span>}
                           </div>
                         </div>
                       ))}

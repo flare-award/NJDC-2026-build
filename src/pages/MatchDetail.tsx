@@ -9,7 +9,7 @@ import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
 import { computeOdds } from "../utils/odds";
 import { computeMatchAnalytics } from "../utils/analytics";
-import { normalizeMaps, mapPlayed, mapHadOvertime, mapWinner, maxMapCount, relevantMapCount } from "../utils/matchMaps";
+import { normalizeMaps, mapStarted, mapPlayed, mapHadOvertime, mapWinner, maxMapCount, relevantMapCount } from "../utils/matchMaps";
 
 export default function MatchDetail() {
   const { id } = useParams();
@@ -102,9 +102,10 @@ export default function MatchDetail() {
           {maxMapCount(match.format) > 1 && match.status !== "upcoming" && (
             <div className="mt-2 flex flex-col items-center gap-0.5">
               {maps.slice(0, relevantMapCount(match)).map((mp, i) =>
-                mapPlayed(mp) ? (
+                mapStarted(mp) ? (
                   <span key={i} className="text-[11px] font-mono text-zinc-400">
                     Карта {i + 1}: <b className="text-zinc-200">{mp.score_a}:{mp.score_b}</b>
+                    {!mapPlayed(mp) && <span className="ml-1 text-blue-400">· идёт</span>}
                     {mapHadOvertime(mp) && <span className="ml-1 text-yellow-400">ОТ</span>}
                   </span>
                 ) : (
@@ -174,6 +175,7 @@ export default function MatchDetail() {
               const isUpcoming = match.status === "upcoming";
               const w = mapWinner(mp);
               const played = mapPlayed(mp);
+              const started = mapStarted(mp);
               const ot = mapHadOvertime(mp);
               const isBo3Third = match.format === "bo3" && idx === 2;
               const relCount = relevantMapCount(match);
@@ -210,7 +212,7 @@ export default function MatchDetail() {
                     <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 border-b border-white/5 pb-2">
                       <span className="text-yellow-400">Карта {idx + 1} (Катка {idx + 1})</span>
                       <span>
-                        {played ? "Сыграна" : match.status === "live" ? "Идёт (LIVE)" : idx === 0 ? "Ожидание" : "Скоро"}
+                        {played ? "Сыграна" : started ? "Идёт (LIVE)" : match.status === "live" ? "Идёт (LIVE)" : idx === 0 ? "Ожидание" : "Скоро"}
                         {isBo3Third ? " · решающая" : ""}
                       </span>
                     </div>
@@ -240,8 +242,10 @@ export default function MatchDetail() {
                         </span>
                       ) : played ? (
                         <span className="text-zinc-400">Ничья по раундам</span>
+                      ) : started ? (
+                        <span className="text-blue-400">Идёт игра — счёт ещё не финальный</span>
                       ) : (
-                        <span className="text-zinc-500">{idx === 0 ? "Счёт ещё не открыт" : "Счёт ещё не открыт"}</span>
+                        <span className="text-zinc-500">Счёт ещё не открыт</span>
                       )}
                       {ot && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">⚡ Овертайм</span>}
                     </div>
