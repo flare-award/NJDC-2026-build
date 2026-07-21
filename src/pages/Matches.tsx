@@ -4,7 +4,6 @@ import { useData } from "../context/DataContext";
 import TeamLogo from "../components/TeamLogo";
 import StatusBadge from "../components/StatusBadge";
 import { STAGE_LABELS } from "../utils/scoring";
-import { seriesScore } from "../utils/matchMaps";
 import type { MatchStatus } from "../types";
 
 const FILTERS: { key: MatchStatus | "all"; label: string }[] = [
@@ -87,7 +86,7 @@ export default function Matches() {
                           <TeamLogo src={teamA?.logo_url} alt={teamA?.name ?? "TBD"} size={30} />
                         </div>
                         <span className="font-display min-w-[64px] text-center text-lg font-bold text-white">
-                          {m.status === "upcoming" ? "VS" : (() => { const s = seriesScore(m); return `${s.a} : ${s.b}`; })()}
+                          {m.status === "upcoming" ? "VS" : `${m.score_a} : ${m.score_b}`}
                         </span>
                         <div className="flex items-center gap-2 sm:w-40">
                           <TeamLogo src={teamB?.logo_url} alt={teamB?.name ?? "TBD"} size={30} />
