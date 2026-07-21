@@ -19,8 +19,21 @@ import { normalizeMaps, mapWinner, mapFinished, mapHadOvertime, relevantMapCount
 // ============================================================
 // Привилегии магазина
 // ============================================================
+export type NodbetPerkId =
+  | "radar"
+  | "custom_status"
+  | "double_spin"
+  | "hall_frame"
+  | "coin_magnet"
+  | "crown_badge"
+  | "star_trail"
+  | "title_scroll"
+  | "neon_signature"
+  | "aura"
+  | "multi_bet";
+
 export interface NodbetPerk {
-  id: "radar" | "custom_status" | "double_spin" | "hall_frame" | "coin_magnet" | "crown_badge";
+  id: NodbetPerkId;
   name: string;
   description: string;
   cost: number;
@@ -29,13 +42,24 @@ export interface NodbetPerk {
   oneTime: boolean;
 }
 
+export const AURA_COLORS = [
+  { id: "red", label: "Красный", color: "#ef4444", glow: "rgba(239,68,68,0.6)" },
+  { id: "orange", label: "Оранжевый", color: "#f97316", glow: "rgba(249,115,22,0.6)" },
+  { id: "yellow", label: "Жёлтый", color: "#eab308", glow: "rgba(234,179,8,0.6)" },
+  { id: "green", label: "Зелёный", color: "#22c55e", glow: "rgba(34,197,94,0.6)" },
+  { id: "cyan", label: "Бирюзовый", color: "#06b6d4", glow: "rgba(6,182,212,0.6)" },
+  { id: "blue", label: "Синий", color: "#3b82f6", glow: "rgba(59,130,246,0.6)" },
+  { id: "purple", label: "Фиолетовый", color: "#a855f7", glow: "rgba(168,85,247,0.6)" },
+  { id: "pink", label: "Розовый", color: "#ec4899", glow: "rgba(236,72,153,0.6)" },
+] as const;
+
 export const NODBET_PERKS: NodbetPerk[] = [
   {
     id: "radar",
     name: "⚡ Инсайдерский AI-Радар NODBET",
     description:
       "Открывает доступ к аналитике матчей: реальные шансы команд на победу по статистике составов, вероятность клатча 1v2 и вердикт AI на страницах матчей NJDC 2026.",
-    cost: 1_800_000,
+    cost: 1_530_000,
     icon: "⚡",
     badge: "AI РАДАР",
     oneTime: true,
@@ -45,7 +69,7 @@ export const NODBET_PERKS: NodbetPerk[] = [
     name: "🖼️ Рамка Зала Славы",
     description:
       "Косметическая золотая рамка вокруг вашей строки в Топе Хайроллеров. Чисто визуальное отличие — на игру и голосования не влияет.",
-    cost: 8_500_000,
+    cost: 7_225_000,
     icon: "🖼️",
     badge: "ЗОЛОТАЯ РАМКА",
     oneTime: true,
@@ -55,7 +79,7 @@ export const NODBET_PERKS: NodbetPerk[] = [
     name: "👑 Значок Короны Хайроллера",
     description:
       "Эксклюзивный золотой значок короны 👑 и королевская подсветка перед вашим никнеймом в Топе Хайроллеров. Подчеркивает ваш элитный статус.",
-    cost: 25_000_000,
+    cost: 21_250_000,
     icon: "👑",
     badge: "КОРОНА",
     oneTime: true,
@@ -65,7 +89,7 @@ export const NODBET_PERKS: NodbetPerk[] = [
     name: "🏷️ Собственный статус",
     description:
       "Позволяет придумать свой личный статус (текст), который отображается рядом с ником в Топе Хайроллеров. Косметика, никаких игровых преимуществ.",
-    cost: 48_000_000,
+    cost: 40_800_000,
     icon: "🏷️",
     badge: "СВОЙ СТАТУС",
     oneTime: true,
@@ -75,7 +99,7 @@ export const NODBET_PERKS: NodbetPerk[] = [
     name: "🎡 Дабл спин",
     description:
       "Разблокирует режим двойного вращения рулетки: колесо крутится два раза подряд, и вы можете выбить два разных бонуса за один заход. Можно включать/выключать в рулетке.",
-    cost: 75_000_000,
+    cost: 63_750_000,
     icon: "🎡",
     badge: "DOUBLE SPIN",
     oneTime: true,
@@ -85,9 +109,59 @@ export const NODBET_PERKS: NodbetPerk[] = [
     name: "🧲 Мультипас Хайроллера",
     description:
       "Элитный пожизненный пропуск: +10% XP за все действия в NODBET (быстрее качается уровень). На баланс, шансы и голосования не влияет — честный ускоритель прогресса.",
-    cost: 6_500_000_000,
+    cost: 5_525_000_000,
     icon: "🧲",
     badge: "PRESTIGE PASS",
+    oneTime: true,
+  },
+  {
+    id: "star_trail",
+    name: "✨ Звёздный След",
+    description:
+      "Анимированные мерцающие звёздные частицы вокруг вашего никнейма в Зале Славы. Визуальный акцент — ваши строки невозможно пропустить!",
+    cost: 3_500_000,
+    icon: "✨",
+    badge: "ЗВЁЗДНЫЙ СЛЕД",
+    oneTime: true,
+  },
+  {
+    id: "title_scroll",
+    name: "📜 Титульный Свиток",
+    description:
+      "Декоративный свиток с элитным титулом «★ Легенда NODBET ★», отображается над вашим никнеймом в Зале Славы. Чистая косметика — стиль и статус.",
+    cost: 3_200_000,
+    icon: "📜",
+    badge: "ТИТУЛ",
+    oneTime: true,
+  },
+  {
+    id: "neon_signature",
+    name: "💫 Неоновая Подпись",
+    description:
+      "Эффектная неоновая подсветка под вашим никнеймом в Зале Славы. Яркий неоновый след, который пульсирует и привлекает внимание.",
+    cost: 4_500_000,
+    icon: "💫",
+    badge: "НЕОН",
+    oneTime: true,
+  },
+  {
+    id: "aura",
+    name: "🔮 Аура",
+    description:
+      "Анимированная аура вокруг вашего никнейма в Зале Славы. Настройте цвет ауры (8 вариантов) и включайте/выключайте по желанию. Аура отображается поверх Рамки Зала Славы.",
+    cost: 9_500_000,
+    icon: "🔮",
+    badge: "АУРА",
+    oneTime: true,
+  },
+  {
+    id: "multi_bet",
+    name: "🎯 Мульти-Ставка Хайроллера",
+    description:
+      "Повышает максимальную ставку в режиме «СВОЯ» Клатч-Рулетки с 500 000 до 1 000 000 NOD. Для тех, кто готов рисковать по-крупному!",
+    cost: 2_500_000,
+    icon: "🎯",
+    badge: "x2 ЛИМИТ",
     oneTime: true,
   },
 ];
@@ -127,6 +201,12 @@ export interface HighRoller {
   customStatus?: string | null;
   hallFrame?: boolean;
   crownBadge?: boolean;
+  starTrail?: boolean;
+  titleScroll?: boolean;
+  neonSignature?: boolean;
+  auraOwned?: boolean;
+  auraColor?: string | null;
+  auraEnabled?: boolean;
   isCurrentUser?: boolean;
 }
 
@@ -138,6 +218,13 @@ interface NodbetInventory {
   customStatusOwned: boolean;
   coinMagnet: boolean;
   crownBadge: boolean;
+  starTrail: boolean;
+  titleScroll: boolean;
+  neonSignature: boolean;
+  auraOwned: boolean;
+  auraColor: string;
+  auraEnabled: boolean;
+  multiBet: boolean;
   customStatusText: string | null;
   promoUsed?: boolean;
   /** Разовый пересчёт ставок после фикса логики (пункт 8). */
@@ -167,6 +254,13 @@ interface NodbetProfileRow {
   custom_status_owned: boolean;
   coin_magnet: boolean;
   crown_badge?: boolean;
+  star_trail?: boolean;
+  title_scroll?: boolean;
+  neon_signature?: boolean;
+  aura_owned?: boolean;
+  aura_color?: string;
+  aura_enabled?: boolean;
+  multi_bet?: boolean;
   custom_status_text: string | null;
   total_won: number | string;
   bets_count: number;
@@ -191,6 +285,8 @@ export interface NodbetContextValue {
   setProfileNickname: (raw: string) => Promise<{ ok: boolean; error?: string }>;
   setCustomStatus: (raw: string) => { ok: boolean; error?: string };
   setDoubleSpinEnabled: (enabled: boolean) => void;
+  setAuraColor: (color: string) => void;
+  setAuraEnabled: (enabled: boolean) => void;
   placeBet: (
     matchId: string,
     mapIndex: number,
@@ -205,13 +301,14 @@ export interface NodbetContextValue {
     mode: RouletteMode
   ) => { ok: boolean; results: RouletteSpin[]; error?: string };
   commitSpin: (results: RouletteSpin[]) => void;
-  buyPerk: (perkId: NodbetPerk["id"]) => { ok: boolean; error?: string };
+  buyPerk: (perkId: NodbetPerkId) => { ok: boolean; error?: string };
   claimDailyBonus: () => { ok: boolean; error?: string; reward?: number };
   activatePromoCode: (code: string) => Promise<{ ok: boolean; error?: string }>;
   hasRadar: boolean;
   hasDoubleSpin: boolean;
   doubleSpinEnabled: boolean;
   doubleSpinActive: boolean;
+  maxCustomBet: number;
 }
 
 const LOCAL_STORAGE_PREFIX = "njdc_nodbet_state_v3_";
@@ -229,6 +326,13 @@ function emptyInventory(): NodbetInventory {
     customStatusOwned: false,
     coinMagnet: false,
     crownBadge: false,
+    starTrail: false,
+    titleScroll: false,
+    neonSignature: false,
+    auraOwned: false,
+    auraColor: "red",
+    auraEnabled: true,
+    multiBet: false,
     customStatusText: null,
     promoUsed: false,
     betReconcileV1Done: false,
@@ -252,6 +356,13 @@ function getInitialState(userId: string): NodbetState {
           customStatusOwned: !!parsed.inventory?.customStatusOwned,
           coinMagnet: !!parsed.inventory?.coinMagnet,
           crownBadge: !!parsed.inventory?.crownBadge,
+          starTrail: !!parsed.inventory?.starTrail,
+          titleScroll: !!parsed.inventory?.titleScroll,
+          neonSignature: !!parsed.inventory?.neonSignature,
+          auraOwned: !!parsed.inventory?.auraOwned,
+          auraColor: typeof parsed.inventory?.auraColor === "string" ? parsed.inventory.auraColor : "red",
+          auraEnabled: parsed.inventory?.auraEnabled !== false,
+          multiBet: !!parsed.inventory?.multiBet,
           customStatusText: parsed.inventory?.customStatusText ?? null,
           promoUsed: !!parsed.inventory?.promoUsed,
           betReconcileV1Done: !!parsed.inventory?.betReconcileV1Done,
@@ -499,6 +610,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           custom_status_owned: local.inventory.customStatusOwned,
           coin_magnet: local.inventory.coinMagnet,
           crown_badge: local.inventory.crownBadge,
+          star_trail: local.inventory.starTrail,
+          title_scroll: local.inventory.titleScroll,
+          neon_signature: local.inventory.neonSignature,
+          aura_owned: local.inventory.auraOwned,
+          aura_color: local.inventory.auraColor,
+          aura_enabled: local.inventory.auraEnabled,
+          multi_bet: local.inventory.multiBet,
           custom_status_text: local.inventory.customStatusText,
           promo_used: local.inventory.promoUsed,
           bet_reconcile_v1_done: !!local.inventory.betReconcileV1Done,
@@ -534,6 +652,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           customStatusOwned: !!p.custom_status_owned,
           coinMagnet: !!p.coin_magnet,
           crownBadge: !!p.crown_badge,
+          starTrail: !!p.star_trail,
+          titleScroll: !!p.title_scroll,
+          neonSignature: !!p.neon_signature,
+          auraOwned: !!p.aura_owned,
+          auraColor: typeof p.aura_color === "string" ? p.aura_color : "red",
+          auraEnabled: (p as any).aura_enabled !== false,
+          multiBet: !!p.multi_bet,
           customStatusText: p.custom_status_text ?? null,
           promoUsed: !!p.promo_used,
           betReconcileV1Done: !!p.bet_reconcile_v1_done,
@@ -659,6 +784,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           custom_status_owned: snapshot.inventory.customStatusOwned,
           coin_magnet: snapshot.inventory.coinMagnet,
           crown_badge: snapshot.inventory.crownBadge,
+          star_trail: snapshot.inventory.starTrail,
+          title_scroll: snapshot.inventory.titleScroll,
+          neon_signature: snapshot.inventory.neonSignature,
+          aura_owned: snapshot.inventory.auraOwned,
+          aura_color: snapshot.inventory.auraColor,
+          aura_enabled: snapshot.inventory.auraEnabled,
+          multi_bet: snapshot.inventory.multiBet,
           custom_status_text: snapshot.inventory.customStatusText,
           promo_used: snapshot.inventory.promoUsed,
           bet_reconcile_v1_done: !!snapshot.inventory.betReconcileV1Done,
@@ -883,6 +1015,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
               custom_status_owned: state.inventory.customStatusOwned,
               coin_magnet: state.inventory.coinMagnet,
               crown_badge: state.inventory.crownBadge,
+              star_trail: state.inventory.starTrail,
+              title_scroll: state.inventory.titleScroll,
+              neon_signature: state.inventory.neonSignature,
+              aura_owned: state.inventory.auraOwned,
+              aura_color: state.inventory.auraColor,
+              aura_enabled: state.inventory.auraEnabled,
+              multi_bet: state.inventory.multiBet,
               custom_status_text: state.inventory.customStatusText,
             },
             { onConflict: "user_id" }
@@ -910,6 +1049,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
               custom_status_owned: state.inventory.customStatusOwned,
               coin_magnet: state.inventory.coinMagnet,
               crown_badge: state.inventory.crownBadge,
+              star_trail: state.inventory.starTrail,
+              title_scroll: state.inventory.titleScroll,
+              neon_signature: state.inventory.neonSignature,
+              aura_owned: state.inventory.auraOwned,
+              aura_color: state.inventory.auraColor,
+              aura_enabled: state.inventory.auraEnabled,
+              multi_bet: state.inventory.multiBet,
               custom_status_text: state.inventory.customStatusText,
               bets_count: 0,
             });
@@ -937,6 +1083,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
               custom_status_owned: state.inventory.customStatusOwned,
               coin_magnet: state.inventory.coinMagnet,
               crown_badge: state.inventory.crownBadge,
+              star_trail: state.inventory.starTrail,
+              title_scroll: state.inventory.titleScroll,
+              neon_signature: state.inventory.neonSignature,
+              aura_owned: state.inventory.auraOwned,
+              aura_color: state.inventory.auraColor,
+              aura_enabled: state.inventory.auraEnabled,
+              multi_bet: state.inventory.multiBet,
               custom_status_text: state.inventory.customStatusText,
               promo_used: state.inventory.promoUsed,
               total_won: 0,
@@ -977,6 +1130,20 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({
       ...prev,
       inventory: { ...prev.inventory, doubleSpinEnabled: enabled },
+    }));
+  }, []);
+
+  const setAuraColor = useCallback((color: string) => {
+    setState((prev) => ({
+      ...prev,
+      inventory: { ...prev.inventory, auraColor: color },
+    }));
+  }, []);
+
+  const setAuraEnabled = useCallback((enabled: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      inventory: { ...prev.inventory, auraEnabled: enabled },
     }));
   }, []);
 
@@ -1184,7 +1351,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
   // ---------- Магазин ----------
   const buyPerk = useCallback(
-    (perkId: NodbetPerk["id"]) => {
+    (perkId: NodbetPerkId) => {
       const perk = NODBET_PERKS.find((p) => p.id === perkId);
       if (!perk) return { ok: false, error: "Привилегия не найдена" };
       if (state.balance < perk.cost) {
@@ -1197,7 +1364,12 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         (perkId === "hall_frame" && state.inventory.hallFrame) ||
         (perkId === "crown_badge" && state.inventory.crownBadge) ||
         (perkId === "custom_status" && state.inventory.customStatusOwned) ||
-        (perkId === "coin_magnet" && state.inventory.coinMagnet);
+        (perkId === "coin_magnet" && state.inventory.coinMagnet) ||
+        (perkId === "star_trail" && state.inventory.starTrail) ||
+        (perkId === "title_scroll" && state.inventory.titleScroll) ||
+        (perkId === "neon_signature" && state.inventory.neonSignature) ||
+        (perkId === "aura" && state.inventory.auraOwned) ||
+        (perkId === "multi_bet" && state.inventory.multiBet);
       if (owned) return { ok: false, error: "Эта привилегия у вас уже есть!" };
 
       setState((prev) => ({
@@ -1213,6 +1385,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           crownBadge: perkId === "crown_badge" ? true : prev.inventory.crownBadge,
           customStatusOwned: perkId === "custom_status" ? true : prev.inventory.customStatusOwned,
           coinMagnet: perkId === "coin_magnet" ? true : prev.inventory.coinMagnet,
+          starTrail: perkId === "star_trail" ? true : prev.inventory.starTrail,
+          titleScroll: perkId === "title_scroll" ? true : prev.inventory.titleScroll,
+          neonSignature: perkId === "neon_signature" ? true : prev.inventory.neonSignature,
+          auraOwned: perkId === "aura" ? true : prev.inventory.auraOwned,
+          multiBet: perkId === "multi_bet" ? true : prev.inventory.multiBet,
         },
       }));
 
@@ -1238,6 +1415,12 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         customStatus: p.custom_status_owned ? p.custom_status_text : null,
         hallFrame: !!p.hall_frame,
         crownBadge: !!p.crown_badge,
+        starTrail: !!p.star_trail,
+        titleScroll: !!p.title_scroll,
+        neonSignature: !!p.neon_signature,
+        auraOwned: !!p.aura_owned,
+        auraColor: typeof p.aura_color === "string" ? p.aura_color : null,
+        auraEnabled: (p as any).aura_enabled !== false,
         isCurrentUser: !!user && p.user_id === user.id,
       }));
 
@@ -1251,6 +1434,12 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         customStatus: state.inventory.customStatusOwned ? state.inventory.customStatusText : null,
         hallFrame: state.inventory.hallFrame,
         crownBadge: state.inventory.crownBadge,
+        starTrail: state.inventory.starTrail,
+        titleScroll: state.inventory.titleScroll,
+        neonSignature: state.inventory.neonSignature,
+        auraOwned: state.inventory.auraOwned,
+        auraColor: state.inventory.auraOwned ? state.inventory.auraColor : null,
+        auraEnabled: state.inventory.auraEnabled,
         isCurrentUser: true,
       };
 
@@ -1261,10 +1450,10 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     }
 
     const list: HighRoller[] = [
-      { id: "hr_1", nickname: "rezo1n", balance: 84_500_000, totalWon: 210_000_000, betsCount: 42, level: 640, crownBadge: true, hallFrame: true },
-      { id: "hr_2", nickname: "dony_zq", balance: 67_200_000, totalWon: 185_000_000, betsCount: 38, level: 590, hallFrame: true },
-      { id: "hr_3", nickname: "CyberClutch_99", balance: 52_100_000, totalWon: 140_000_000, betsCount: 29, level: 520 },
-      { id: "hr_4", nickname: "Stalk_Aimer", balance: 41_800_000, totalWon: 98_000_000, betsCount: 21, level: 470 },
+      { id: "hr_1", nickname: "rezo1n", balance: 84_500_000, totalWon: 210_000_000, betsCount: 42, level: 640, crownBadge: true, hallFrame: true, starTrail: true, neonSignature: true },
+      { id: "hr_2", nickname: "dony_zq", balance: 67_200_000, totalWon: 185_000_000, betsCount: 38, level: 590, hallFrame: true, auraOwned: true, auraColor: "purple", auraEnabled: true },
+      { id: "hr_3", nickname: "CyberClutch_99", balance: 52_100_000, totalWon: 140_000_000, betsCount: 29, level: 520, titleScroll: true },
+      { id: "hr_4", nickname: "Stalk_Aimer", balance: 41_800_000, totalWon: 98_000_000, betsCount: 21, level: 470, neonSignature: true },
       { id: "hr_5", nickname: "ShokeFan_2026", balance: 36_400_000, totalWon: 85_000_000, betsCount: 19, level: 430 },
       { id: "hr_6", nickname: "awp_god_rush", balance: 29_500_000, totalWon: 64_000_000, betsCount: 15, level: 380 },
     ];
@@ -1279,11 +1468,19 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       customStatus: state.inventory.customStatusOwned ? state.inventory.customStatusText : null,
       hallFrame: state.inventory.hallFrame,
       crownBadge: state.inventory.crownBadge,
+      starTrail: state.inventory.starTrail,
+      titleScroll: state.inventory.titleScroll,
+      neonSignature: state.inventory.neonSignature,
+      auraOwned: state.inventory.auraOwned,
+      auraColor: state.inventory.auraOwned ? state.inventory.auraColor : null,
+      auraEnabled: state.inventory.auraEnabled,
       isCurrentUser: true,
     };
 
     return [...list, myItem].sort((a, b) => b.balance - a.balance);
   }, [profiles, user, myProfile, displayNickname, state.balance, state.bets, state.rouletteHistory, state.inventory, level]);
+
+  const maxCustomBet = state.inventory.multiBet ? 1_000_000 : 500_000;
 
   const value = useMemo<NodbetContextValue>(
     () => ({
@@ -1303,6 +1500,8 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       setProfileNickname,
       setCustomStatus,
       setDoubleSpinEnabled,
+      setAuraColor,
+      setAuraEnabled,
       placeBet,
       cancelBet,
       spinRoulette,
@@ -1314,6 +1513,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       hasDoubleSpin: state.inventory.doubleSpin,
       doubleSpinEnabled: state.inventory.doubleSpinEnabled,
       doubleSpinActive: state.inventory.doubleSpin && state.inventory.doubleSpinEnabled,
+      maxCustomBet,
     }),
     [
       state.balance,
@@ -1332,6 +1532,8 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       setProfileNickname,
       setCustomStatus,
       setDoubleSpinEnabled,
+      setAuraColor,
+      setAuraEnabled,
       placeBet,
       cancelBet,
       spinRoulette,
@@ -1339,6 +1541,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       buyPerk,
       claimDailyBonus,
       activatePromoCode,
+      maxCustomBet,
     ]
   );
 
