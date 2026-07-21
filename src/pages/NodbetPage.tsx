@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useNodbet, NODBET_PERKS, AURA_COLORS, type NodbetPerkId, type RouletteSpin } from "../context/NodbetContext";
 import { useData } from "../context/DataContext";
+import DoubleRouletteView from "../components/DoubleRouletteView";
 import {
   BONUSES,
   ROULETTE_PRESETS,
@@ -62,7 +63,7 @@ export default function NodbetPage() {
   } = useNodbet();
 
   const { matches, teams } = useData();
-  const [activeTab, setActiveTab] = useState<"roulette" | "allornothing" | "line" | "shop" | "my_bets" | "leaderboard">("roulette");
+  const [activeTab, setActiveTab] = useState<"roulette" | "double_roulette" | "allornothing" | "line" | "shop" | "my_bets" | "leaderboard">("roulette");
 
   /** Активный режим рулетки определяется выбранной вкладкой. */
   const rouletteMode: RouletteMode = activeTab === "allornothing" ? "allornothing" : "classic";
@@ -511,6 +512,7 @@ export default function NodbetPage() {
             <div className="flex items-center gap-1.5">
               {[
                 { key: "roulette", label: "🎰 Клатч-Рулетка", desc: "Честное колесо и фри-спин" },
+                { key: "double_roulette", label: "⚔️ Двойная-Рулетка", desc: "Мультиплеер лобби (2-4 игрока)" },
                 { key: "allornothing", label: "🎲 Всё или ничего", desc: "50% Джекпот · 50% Неудача" },
                 { key: "line", label: "⚡ Линия ставок", desc: `Боевые линии · ${matches.length} игр` },
                 { key: "shop", label: "👑 Магазин", desc: "Честные привилегии" },
@@ -536,6 +538,9 @@ export default function NodbetPage() {
 
       {/* MAIN CONTENT AREA */}
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        {/* ======================= TAB: DOUBLE ROULETTE ======================= */}
+        {activeTab === "double_roulette" && <DoubleRouletteView />}
+
         {/* ======================= TAB 1: ROULETTE (classic + allornothing) ======================= */}
         {(activeTab === "roulette" || activeTab === "allornothing") && (
           <div className="grid gap-10 lg:grid-cols-12 items-start">
@@ -544,9 +549,17 @@ export default function NodbetPage() {
               <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-red-600 via-yellow-400 to-red-600" />
 
               <div className="text-center">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/30 px-3 py-1 text-xs font-bold text-yellow-400 uppercase tracking-widest">
-                  {rouletteMode === "allornothing" ? "Всё или ничего · NODBET" : "Честная рулетка · NODBET v3"}
-                </span>
+                <div className="mb-3 flex items-center justify-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/30 px-3 py-1 text-xs font-bold text-yellow-400 uppercase tracking-widest">
+                    {rouletteMode === "allornothing" ? "Всё или ничего · NODBET" : "Честная рулетка · NODBET v3"}
+                  </span>
+                  <button
+                    onClick={() => setActiveTab("double_roulette")}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-red-600 to-amber-500 px-3 py-1 text-xs font-black uppercase tracking-wider text-white shadow hover:scale-105 transition-transform cursor-pointer"
+                  >
+                    ⚔️ Попробовать Двойную-Рулетку (Лобби) ↗
+                  </button>
+                </div>
                 <h2 className="mt-3 font-display text-2xl sm:text-3xl font-black italic uppercase text-white tracking-tight">
                   {rouletteMode === "allornothing" ? (
                     <>Колесо <span className="text-yellow-400">Всё или ничего</span></>
