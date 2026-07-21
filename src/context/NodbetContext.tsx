@@ -309,6 +309,10 @@ export interface NodbetContextValue {
   doubleSpinEnabled: boolean;
   doubleSpinActive: boolean;
   maxCustomBet: number;
+  /** Deduct coins for double roulette bet (returns true if successful) */
+  doubleRouletteDeduct: (amount: number) => { ok: boolean; error?: string };
+  /** Award coins after double roulette spin */
+  doubleRoulettePayout: (amount: number, xpGain: number) => void;
 }
 
 const LOCAL_STORAGE_PREFIX = "njdc_nodbet_state_v3_";
@@ -1349,6 +1353,36 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     [state.streak, state.inventory.coinMagnet]
   );
 
+  // ---------- Двойная Рулетка: списание и начисление ----------
+  const doubleRouletteDeduct = useCallback(
+    (amount: number) => {
+      if (amount <= 0 || isNaN(amount)) return { ok: false, error: "Неверная сумма" };
+      if (amount > state.balance) return { ok: false, error: "Недостаточно NOD-Коинов на балансе!" };
+
+      const magnet = state.inventory.coinMagnet ? 1.1 : 1;
+      setState((prev) => ({
+        ...prev,
+        balance: prev.balance - amount,
+        xp: prev.xp + Math.round((amount / 30) * magnet),
+      }));
+      return { ok: true };
+    },
+    [state.balance, state.inventory.coinMagnet]
+  );
+
+  const doubleRoulettePayout = useCallback(
+    (amount: number, xpGain: number) => {
+      if (amount <= 0 && xpGain <= 0) return;
+      const magnet = state.inventory.coinMagnet ? 1.1 : 1;
+      setState((prev) => ({
+        ...prev,
+        balance: Math.max(0, prev.balance + Math.round(amount)),
+        xp: prev.xp + Math.round(xpGain * magnet),
+      }));
+    },
+    [state.inventory.coinMagnet]
+  );
+
   // ---------- Магазин ----------
   const buyPerk = useCallback(
     (perkId: NodbetPerkId) => {
@@ -1514,6 +1548,8 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       doubleSpinEnabled: state.inventory.doubleSpinEnabled,
       doubleSpinActive: state.inventory.doubleSpin && state.inventory.doubleSpinEnabled,
       maxCustomBet,
+      doubleRouletteDeduct,
+      doubleRoulettePayout,
     }),
     [
       state.balance,
@@ -1542,6 +1578,8 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       claimDailyBonus,
       activatePromoCode,
       maxCustomBet,
+      doubleRouletteDeduct,
+      doubleRoulettePayout,
     ]
   );
 
