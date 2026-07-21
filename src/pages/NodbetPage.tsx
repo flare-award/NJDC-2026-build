@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Flame,
@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useNodbet, NODBET_PERKS, type NodbetPerk, type RouletteSpin } from "../context/NodbetContext";
+import { useNodbet, NODBET_PERKS, AURA_COLORS, type NodbetPerkId, type RouletteSpin } from "../context/NodbetContext";
 import { useData } from "../context/DataContext";
 import {
   BONUSES,
@@ -32,7 +32,6 @@ import { STAGE_LABELS } from "../utils/scoring";
 
 const SPIN_PRESETS = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000];
 const CUSTOM_MIN = 50000;
-const CUSTOM_MAX = 500000;
 
 export default function NodbetPage() {
   const {
@@ -54,9 +53,12 @@ export default function NodbetPage() {
     activatePromoCode,
     setCustomStatus,
     setDoubleSpinEnabled,
+    setAuraColor,
+    setAuraEnabled,
     hasDoubleSpin,
     doubleSpinEnabled,
     doubleSpinActive,
+    maxCustomBet,
   } = useNodbet();
 
   const { matches, teams } = useData();
@@ -89,6 +91,9 @@ export default function NodbetPage() {
   // Custom status input
   const [statusInput, setStatusInput] = useState<string>("");
 
+  // Leaderboard category
+  const [leaderboardCategory, setLeaderboardCategory] = useState<"balance" | "totalWon" | "betsCount" | "level">("balance");
+
   // Promo code state (пункт 6)
   const [promoInput, setPromoInput] = useState<string>("");
   const [promoToast, setPromoToast] = useState<{ ok: boolean; text: string } | null>(null);
@@ -119,9 +124,9 @@ export default function NodbetPage() {
   const effectiveSpinAmount = useMemo(() => {
     if (spinMode === "free") return 0;
     if (spinMode === "all") return balance;
-    if (spinMode === "custom") return Math.min(CUSTOM_MAX, Math.max(CUSTOM_MIN, customSpin || 0));
+    if (spinMode === "custom") return Math.min(maxCustomBet, Math.max(CUSTOM_MIN, customSpin || 0));
     return spinBetAmount;
-  }, [spinMode, balance, customSpin, spinBetAmount]);
+  }, [spinMode, balance, customSpin, spinBetAmount, maxCustomBet]);
 
   const wheelSectors = useMemo(() => buildWheelSectors(rouletteMode), [rouletteMode]);
   const wheelBg = useMemo(() => wheelGradient(wheelSectors), [wheelSectors]);
@@ -140,6 +145,21 @@ export default function NodbetPage() {
 
   const pendingBets = useMemo(() => bets.filter((b) => b.status === "pending"), [bets]);
   const resolvedBets = useMemo(() => bets.filter((b) => b.status !== "pending"), [bets]);
+
+  const sortedHighRollers = useMemo(() => {
+    const sorted = [...highRollers];
+    switch (leaderboardCategory) {
+      case "totalWon":
+        return sorted.sort((a, b) => b.totalWon - a.totalWon);
+      case "betsCount":
+        return sorted.sort((a, b) => b.betsCount - a.betsCount);
+      case "level":
+        return sorted.sort((a, b) => b.level - a.level);
+      case "balance":
+      default:
+        return sorted.sort((a, b) => b.balance - a.balance);
+    }
+  }, [highRollers, leaderboardCategory]);
 
   const handleDailyBonus = () => {
     const { ok, error, reward } = claimDailyBonus();
@@ -268,7 +288,7 @@ export default function NodbetPage() {
     setTimeout(() => setBetSuccessToast(null), 4000);
   };
 
-  const handleBuyPerk = (perkId: NodbetPerk["id"]) => {
+  const handleBuyPerk = (perkId: NodbetPerkId) => {
     const { ok, error } = buyPerk(perkId);
     if (!ok) {
       setBetErrorToast(error || "Ошибка покупки");
@@ -425,7 +445,32 @@ export default function NodbetPage() {
                 🧲 Мультипас Хайроллера
               </span>
             )}
-            {!inventory.radarUnlocked && !inventory.doubleSpin && !inventory.hallFrame && !inventory.crownBadge && !inventory.customStatusOwned && !inventory.coinMagnet && (
+            {inventory.starTrail && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-300">
+                ✨ Звёздный След
+              </span>
+            )}
+            {inventory.titleScroll && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
+                📜 Титульный Свиток
+              </span>
+            )}
+            {inventory.neonSignature && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-3 py-1 text-xs font-bold text-fuchsia-300">
+                💫 Неоновая Подпись
+              </span>
+            )}
+            {inventory.auraOwned && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-300">
+                🔮 Аура {inventory.auraEnabled ? "(ВКЛ)" : "(ВЫКЛ)"}
+              </span>
+            )}
+            {inventory.multiBet && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-500/40 bg-orange-500/10 px-3 py-1 text-xs font-bold text-orange-300">
+                🎯 Мульти-Ставка (x2 лимит)
+              </span>
+            )}
+            {!inventory.radarUnlocked && !inventory.doubleSpin && !inventory.hallFrame && !inventory.crownBadge && !inventory.customStatusOwned && !inventory.coinMagnet && !inventory.starTrail && !inventory.titleScroll && !inventory.neonSignature && !inventory.auraOwned && !inventory.multiBet && (
               <span className="text-xs text-zinc-600">Пока нет купленных привилегий — загляните в Магазин Привилегий.</span>
             )}
           </div>
@@ -628,7 +673,7 @@ export default function NodbetPage() {
                       spinMode === "custom" ? "bg-red-600 text-white shadow-md" : "bg-white/5 text-zinc-300 hover:bg-white/10"
                     }`}
                   >
-                    <span>Своя (50k–500k)</span>
+                    <span>Своя (50k–{(maxCustomBet / 1000).toFixed(0)}k)</span>
                   </button>
                   <button
                     onClick={() => setSpinMode("all")}
@@ -647,14 +692,14 @@ export default function NodbetPage() {
                     <input
                       type="number"
                       min={CUSTOM_MIN}
-                      max={CUSTOM_MAX}
+                      max={maxCustomBet}
                       step={10000}
                       value={customSpin}
-                      onChange={(e) => setCustomSpin(Math.max(CUSTOM_MIN, Math.min(CUSTOM_MAX, Number(e.target.value) || CUSTOM_MIN)))}
+                      onChange={(e) => setCustomSpin(Math.max(CUSTOM_MIN, Math.min(maxCustomBet, Number(e.target.value) || CUSTOM_MIN)))}
                       disabled={isSpinning}
                       className="flex-1 rounded-xl bg-white/10 px-3 py-1.5 font-mono text-sm font-bold text-yellow-400 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
-                    <span className="text-[11px] text-zinc-500">мин 50k / макс 500k</span>
+                    <span className="text-[11px] text-zinc-500">мин 50k / макс {(maxCustomBet / 1000).toFixed(0)}k</span>
                   </div>
                 )}
 
@@ -997,7 +1042,12 @@ export default function NodbetPage() {
                   (perk.id === "hall_frame" && inventory.hallFrame) ||
                   (perk.id === "crown_badge" && inventory.crownBadge) ||
                   (perk.id === "custom_status" && inventory.customStatusOwned) ||
-                  (perk.id === "coin_magnet" && inventory.coinMagnet);
+                  (perk.id === "coin_magnet" && inventory.coinMagnet) ||
+                  (perk.id === "star_trail" && inventory.starTrail) ||
+                  (perk.id === "title_scroll" && inventory.titleScroll) ||
+                  (perk.id === "neon_signature" && inventory.neonSignature) ||
+                  (perk.id === "aura" && inventory.auraOwned) ||
+                  (perk.id === "multi_bet" && inventory.multiBet);
 
                 return (
                   <div
@@ -1058,6 +1108,76 @@ export default function NodbetPage() {
                 {inventory.customStatusText && (
                   <p className="mt-3 text-xs text-green-400 font-medium">✓ Текущий статус: «{inventory.customStatusText}»</p>
                 )}
+              </div>
+            )}
+
+            {/* AURA SETTINGS PANEL */}
+            {inventory.auraOwned && (
+              <div className="mt-6 rounded-3xl border border-violet-500/30 bg-[#161616] p-6 sm:p-8">
+                <h4 className="font-display text-lg font-bold text-violet-300 flex items-center gap-2">🔮 Настройка Ауры</h4>
+                <p className="mt-1 text-xs text-zinc-400">Настройте цвет и отображение анимированной ауры вокруг вашего никнейма в Зале Славы.</p>
+
+                {/* ON/OFF TOGGLE */}
+                <div className="mt-5 flex items-center justify-between rounded-xl bg-white/5 border border-white/10 p-4">
+                  <div>
+                    <p className="text-sm font-bold text-white">Отображение ауры</p>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">{inventory.auraEnabled ? "Аура видна всем в Зале Славы" : "Аура скрыта — никто не видит её"}</p>
+                  </div>
+                  <button
+                    onClick={() => setAuraEnabled(!inventory.auraEnabled)}
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer ${inventory.auraEnabled ? "bg-violet-600" : "bg-zinc-700"}`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform shadow-md ${inventory.auraEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+
+                {/* COLOR PALETTE */}
+                <div className="mt-5">
+                  <p className="text-sm font-bold text-white mb-3">Цвет ауры:</p>
+                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
+                    {AURA_COLORS.map((ac) => (
+                      <button
+                        key={ac.id}
+                        onClick={() => setAuraColor(ac.id)}
+                        className={`flex flex-col items-center gap-1.5 rounded-xl p-2.5 transition-all cursor-pointer border-2 ${
+                          inventory.auraColor === ac.id
+                            ? "border-white bg-white/10 scale-105 shadow-lg"
+                            : "border-transparent bg-white/5 hover:bg-white/10 hover:border-white/20"
+                        }`}
+                      >
+                        <span
+                          className="h-8 w-8 rounded-full shadow-lg"
+                          style={{
+                            backgroundColor: ac.color,
+                            boxShadow: `0 0 12px ${ac.glow}`,
+                          }}
+                        />
+                        <span className="text-[10px] font-bold text-zinc-300">{ac.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* PREVIEW */}
+                <div className="mt-5 rounded-xl bg-black/40 border border-white/10 p-4">
+                  <p className="text-[11px] text-zinc-500 font-bold uppercase tracking-wider mb-2">Предпросмотр:</p>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`font-bold text-white px-2 py-1 rounded ${inventory.auraEnabled ? "aura-nickname" : ""}`}
+                      style={
+                        inventory.auraEnabled
+                          ? {
+                              ["--aura-color" as any]: AURA_COLORS.find((c) => c.id === inventory.auraColor)?.color || "#ef4444",
+                              ["--aura-glow" as any]: AURA_COLORS.find((c) => c.id === inventory.auraColor)?.glow || "rgba(239,68,68,0.6)",
+                            }
+                          : {}
+                      }
+                    >
+                      Ваш никнейм
+                    </span>
+                    {!inventory.auraEnabled && <span className="text-[11px] text-zinc-500 italic">(аура выключена)</span>}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1162,8 +1282,30 @@ export default function NodbetPage() {
                 <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
                   <Crown className="text-yellow-400" /> Зал Славы Хайроллеров
                 </h3>
-                <p className="text-xs text-zinc-400">Топ игроков NODBET по балансу монет и уровням XP.</p>
+                <p className="text-xs text-zinc-400">Топ игроков NODBET — выберите категорию для просмотра.</p>
               </div>
+            </div>
+
+            {/* CATEGORY TABS */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: "balance" as const, label: "💰 Баланс NOD", desc: "Топ по балансу монет" },
+                { key: "totalWon" as const, label: "🏆 Всего выиграно", desc: "Топ по общему выигрышу" },
+                { key: "betsCount" as const, label: "📊 Ставок", desc: "Топ по количеству ставок" },
+                { key: "level" as const, label: "⭐ Уровень", desc: "Топ по уровню XP" },
+              ].map((cat) => (
+                <button
+                  key={cat.key}
+                  onClick={() => setLeaderboardCategory(cat.key)}
+                  className={`rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    leaderboardCategory === cat.key
+                      ? "bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-yellow-500/20"
+                      : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white border border-white/10"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141414]">
@@ -1179,46 +1321,115 @@ export default function NodbetPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {highRollers.map((hr, idx) => (
-                    <tr
-                      key={hr.id}
-                      className={`transition-colors ${
-                        hr.isCurrentUser ? "bg-red-950/40 border-l-4 border-red-500" : hr.hallFrame ? "bg-amber-500/[0.06]" : idx < 3 ? "bg-yellow-500/[0.04]" : ""
-                      }`}
-                    >
-                      <td className="px-5 py-4 font-display text-lg font-bold text-zinc-400">
-                        {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          {hr.crownBadge && (
-                            <span className="text-base" title="👑 Корона Хайроллера">
-                              👑
-                            </span>
-                          )}
-                          <span className={`font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""} ${hr.isCurrentUser ? "text-yellow-400" : ""}`}>
-                            {hr.nickname}
+                  {sortedHighRollers.map((hr, idx) => {
+                    const auraColorDef = hr.auraOwned && hr.auraEnabled && hr.auraColor
+                      ? AURA_COLORS.find((c) => c.id === hr.auraColor)
+                      : null;
+
+                    return (
+                      <tr
+                        key={hr.id}
+                        className={`transition-colors ${
+                          hr.isCurrentUser ? "bg-red-950/40 border-l-4 border-red-500" : hr.hallFrame ? "bg-amber-500/[0.06]" : idx < 3 ? "bg-yellow-500/[0.04]" : ""
+                        }`}
+                      >
+                        <td className="px-5 py-4 font-display text-lg font-bold text-zinc-400">
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-col gap-1">
+                            {/* TITLE SCROLL - above everything */}
+                            {hr.titleScroll && (
+                              <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 opacity-90">
+                                ★ Легенда NODBET ★
+                              </span>
+                            )}
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              {/* AURA WRAPPER — above Hall Frame, wraps the nickname */}
+                              {auraColorDef ? (
+                                <span
+                                  className="aura-nickname relative inline-flex items-center gap-2.5"
+                                  style={{
+                                    ["--aura-color" as any]: auraColorDef.color,
+                                    ["--aura-glow" as any]: auraColorDef.glow,
+                                  }}
+                                >
+                                  {hr.crownBadge && (
+                                    <span className="text-base relative z-10" title="👑 Корона Хайроллера">
+                                      👑
+                                    </span>
+                                  )}
+                                  <span className={`relative z-10 font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""} ${hr.isCurrentUser ? "text-yellow-400" : ""}`}>
+                                    {hr.nickname}
+                                  </span>
+                                  {/* Star trail particles */}
+                                  {hr.starTrail && (
+                                    <span className="star-trail-container absolute inset-0 pointer-events-none">
+                                      <span className="star-particle" style={{ top: "10%", left: "5%", animationDelay: "0s" }}>✦</span>
+                                      <span className="star-particle" style={{ top: "60%", left: "90%", animationDelay: "0.5s" }}>✧</span>
+                                      <span className="star-particle" style={{ top: "20%", left: "70%", animationDelay: "1s" }}>✦</span>
+                                      <span className="star-particle" style={{ top: "80%", left: "30%", animationDelay: "1.5s" }}>✧</span>
+                                      <span className="star-particle" style={{ top: "40%", left: "50%", animationDelay: "0.3s" }}>⭑</span>
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <>
+                                  {hr.crownBadge && (
+                                    <span className="text-base" title="👑 Корона Хайроллера">
+                                      👑
+                                    </span>
+                                  )}
+                                  <span className={`font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""} ${hr.isCurrentUser ? "text-yellow-400" : ""}`}>
+                                    {hr.nickname}
+                                  </span>
+                                  {/* Star trail without aura */}
+                                  {hr.starTrail && (
+                                    <span className="star-trail-container relative inline-block ml-1 pointer-events-none">
+                                      <span className="star-particle" style={{ top: "-30%", left: "0%", animationDelay: "0s" }}>✦</span>
+                                      <span className="star-particle" style={{ top: "20%", left: "60%", animationDelay: "0.5s" }}>✧</span>
+                                      <span className="star-particle" style={{ top: "-20%", left: "40%", animationDelay: "1s" }}>⭑</span>
+                                    </span>
+                                  )}
+                                </>
+                              )}
+
+                              {hr.isCurrentUser && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">Вы</span>}
+                              {hr.customStatus && (
+                                <span className="rounded-full border border-yellow-500/50 bg-yellow-500/20 px-2.5 py-0.5 text-[11px] font-bold text-yellow-300">
+                                  {hr.customStatus}
+                                </span>
+                              )}
+                            </div>
+                            {/* NEON SIGNATURE — below the nickname row */}
+                            {hr.neonSignature && (
+                              <span className="neon-signature text-[9px] font-bold tracking-widest uppercase" style={{ color: "#e879f9" }}>
+                                ✧ NODBET PLAYER ✧
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-center">
+                          <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs font-bold ${
+                            leaderboardCategory === "level" ? "bg-yellow-500/20 text-yellow-300 ring-1 ring-yellow-400/40" : "bg-white/5 text-yellow-300"
+                          }`}>
+                            <Crown size={11} /> {hr.level}
                           </span>
-                          {hr.isCurrentUser && <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-300">Вы</span>}
-                          {hr.customStatus && (
-                            <span className="rounded-full border border-yellow-500/50 bg-yellow-500/20 px-2.5 py-0.5 text-[11px] font-bold text-yellow-300">
-                              {hr.customStatus}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-center">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-0.5 font-mono text-xs font-bold text-yellow-300">
-                          <Crown size={11} /> {hr.level}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-center text-zinc-300 font-mono">{hr.betsCount}</td>
-                      <td className="px-5 py-4 text-center font-mono text-zinc-300">{hr.totalWon.toLocaleString()} NOD</td>
-                      <td className="px-5 py-4 text-right font-mono text-lg font-black text-yellow-400">
-                        {hr.balance.toLocaleString()} <span className="text-xs text-zinc-400">NOD</span>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-5 py-4 text-center">
+                          <span className={`font-mono ${leaderboardCategory === "betsCount" ? "text-yellow-300 font-bold" : "text-zinc-300"}`}>
+                            {hr.betsCount}
+                          </span>
+                        </td>
+                        <td className={`px-5 py-4 text-center font-mono ${leaderboardCategory === "totalWon" ? "text-yellow-300 font-bold text-base" : "text-zinc-300"}`}>
+                          {hr.totalWon.toLocaleString()} NOD
+                        </td>
+                        <td className={`px-5 py-4 text-right font-mono ${leaderboardCategory === "balance" ? "text-lg font-black text-yellow-400" : "text-base font-bold text-yellow-400"}`}>
+                          {hr.balance.toLocaleString()} <span className="text-xs text-zinc-400">NOD</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
