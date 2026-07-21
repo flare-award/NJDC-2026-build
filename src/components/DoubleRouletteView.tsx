@@ -93,6 +93,33 @@ export default function DoubleRouletteView() {
   const [hasConfirmedPick, setHasConfirmedPick] = useState<boolean>(false);
   const [betDeducted, setBetDeducted] = useState<boolean>(false);
 
+  // Compute effective bet amount based on mode
+  const effectiveBetAmount = useMemo(() => {
+    if (betMode === "all") return balance;
+    if (betMode === "custom") {
+      const val = Math.max(activeLobby?.min_bet ?? 500, parseInt(customBetInput, 10) || (activeLobby?.min_bet ?? 500));
+      return Math.min(balance, val);
+    }
+    return myBetAmount;
+  }, [betMode, balance, customBetInput, myBetAmount, activeLobby?.min_bet]);
+
+  // Refs for tracking up-to-date state in timer intervals without stale closure issues
+  const hasConfirmedPickRef = useRef<boolean>(false);
+  const mySelectedBonusRef = useRef<DoubleBonusId | null>(null);
+  const effectiveBetAmountRef = useRef<number>(1000);
+
+  useEffect(() => {
+    hasConfirmedPickRef.current = hasConfirmedPick;
+  }, [hasConfirmedPick]);
+
+  useEffect(() => {
+    mySelectedBonusRef.current = mySelectedBonus;
+  }, [mySelectedBonus]);
+
+  useEffect(() => {
+    effectiveBetAmountRef.current = effectiveBetAmount;
+  }, [effectiveBetAmount]);
+
   // Wheel animation state
   const [isSpinning, setIsSpinning] = useState<boolean>(false);
   const [wheelRotation, setWheelRotation] = useState<number>(0);
@@ -139,6 +166,9 @@ export default function DoubleRouletteView() {
   const fetchLobbies = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) return;
     try {
+      // Call cleanup stale lobbies database function before loading
+      await supabase.rpc("cleanup_stale_double_lobbies");
+
       const { data, error } = await supabase
         .from("nodbet_double_lobbies")
         .select("*")
@@ -171,16 +201,111 @@ export default function DoubleRouletteView() {
         supabase.from("nodbet_double_lobby_players").select("*").eq("lobby_id", lobbyId).order("joined_at", { ascending: true }),
       ]);
 
-      if (!lobRes.error && lobRes.data) {
+      if (lobRes.error) {
+        // Lobby was deleted or not found
+        setActiveLobbyId(null);
+        setActiveLobby(null);
+        localStorage.removeItem("nodbet_active_lobby_id");
+        return;
+      }
+
+      if (lobRes.data) {
         setActiveLobby(lobRes.data as DBRowLobby);
       }
-      if (!plyRes.error && plyRes.data) {
+
+      if (plyRes.error) {
+        return;
+      }
+
+      if (plyRes.data) {
         setLobbyPlayers(plyRes.data as DBRowPlayer[]);
+        
+        // Check if current user is still in the player list of the lobby
+        const isStillIn = plyRes.data.some((p) => p.user_id === currentUserId);
+        if (!isStillIn) {
+          // Current user was kicked, left, or removed
+          setActiveLobbyId(null);
+          setActiveLobby(null);
+          localStorage.removeItem("nodbet_active_lobby_id");
+          setErrorToast("Вы были исключены из лобби или лобби было распущено.");
+          setTimeout(() => setErrorToast(null), 3000);
+        }
       }
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [currentUserId]);
+
+  // Load saved lobby from localStorage on mount/refresh
+  useEffect(() => {
+    const savedLobbyId = localStorage.getItem("nodbet_active_lobby_id");
+    if (savedLobbyId && isSupabaseConfigured && supabase) {
+      const checkLobby = async () => {
+        if (!supabase) return;
+        try {
+          const { data: player } = await supabase
+            .from("nodbet_double_lobby_players")
+            .select("*")
+            .eq("lobby_id", savedLobbyId)
+            .eq("user_id", currentUserId)
+            .single();
+
+          if (player) {
+            setActiveLobbyId(savedLobbyId);
+            fetchActiveLobbyDetails(savedLobbyId);
+          } else {
+            localStorage.removeItem("nodbet_active_lobby_id");
+          }
+        } catch {
+          localStorage.removeItem("nodbet_active_lobby_id");
+        }
+      };
+      checkLobby();
+    }
+  }, [currentUserId, fetchActiveLobbyDetails]);
+
+  // Sync activeLobbyId with localStorage
+  useEffect(() => {
+    if (activeLobbyId) {
+      localStorage.setItem("nodbet_active_lobby_id", activeLobbyId);
+    } else {
+      localStorage.removeItem("nodbet_active_lobby_id");
+    }
+  }, [activeLobbyId]);
+
+  // Keep-alive: touch active lobby every 2 minutes to prevent deletion due to inactivity
+  useEffect(() => {
+    if (!activeLobbyId || !isSupabaseConfigured || !supabase) return;
+    
+    const interval = setInterval(async () => {
+      if (!supabase) return;
+      try {
+        await supabase
+          .from("nodbet_double_lobbies")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", activeLobbyId);
+      } catch {
+        /* ignore */
+      }
+    }, 120000); // every 2 minutes
+
+    return () => clearInterval(interval);
+  }, [activeLobbyId]);
+
+  // Recover local states from database on reload/refresh during betting phase
+  useEffect(() => {
+    if (activeLobby?.status === "betting" && lobbyPlayers.length > 0) {
+      const myPlayer = lobbyPlayers.find((p) => p.user_id === currentUserId);
+      if (myPlayer && myPlayer.is_ready && myPlayer.selected_bonus_id) {
+        if (!hasConfirmedPick) {
+          setMySelectedBonus(myPlayer.selected_bonus_id as DoubleBonusId);
+          setMyBetAmount(myPlayer.bet_amount);
+          setHasConfirmedPick(true);
+          setBetDeducted(true); // Since it is ready in DB, assume bet is already deducted
+        }
+      }
+    }
+  }, [activeLobby?.status, lobbyPlayers, currentUserId, hasConfirmedPick]);
 
   // Poll lobbies and active lobby
   useEffect(() => {
@@ -259,6 +384,7 @@ export default function DoubleRouletteView() {
 
         setActiveLobbyId(newLobby.id);
         setActiveLobby(newLobby as DBRowLobby);
+        localStorage.setItem("nodbet_active_lobby_id", newLobby.id);
         setShowCreateModal(false);
         setInfoToast(`🎮 Лобби «${lobbyTitle}» успешно создано! Ожидание игроков...`);
         setTimeout(() => setInfoToast(null), 3000);
@@ -346,6 +472,7 @@ export default function DoubleRouletteView() {
 
         setActiveLobbyId(lobby.id);
         setActiveLobby(lobby);
+        localStorage.setItem("nodbet_active_lobby_id", lobby.id);
         fetchActiveLobbyDetails(lobby.id);
         setInfoToast(`✅ Вы успешно присоединились к лобби «${lobby.name}»!`);
         setTimeout(() => setInfoToast(null), 3000);
@@ -382,11 +509,20 @@ export default function DoubleRouletteView() {
     if (!activeLobbyId) return;
 
     if (isSupabaseConfigured && supabase) {
-      await supabase
-        .from("nodbet_double_lobby_players")
-        .delete()
-        .eq("lobby_id", activeLobbyId)
-        .eq("user_id", currentUserId);
+      if (activeLobby?.host_id === currentUserId) {
+        // If Host leaves, we delete the lobby entirely (cascade deletes players)
+        await supabase
+          .from("nodbet_double_lobbies")
+          .delete()
+          .eq("id", activeLobbyId);
+      } else {
+        // If regular player leaves, they just remove themselves
+        await supabase
+          .from("nodbet_double_lobby_players")
+          .delete()
+          .eq("lobby_id", activeLobbyId)
+          .eq("user_id", currentUserId);
+      }
     }
 
     setActiveLobbyId(null);
@@ -399,6 +535,7 @@ export default function DoubleRouletteView() {
     setMySelectedBonus(null);
     setBetMode("preset");
     setMyBetAmount(1000);
+    localStorage.removeItem("nodbet_active_lobby_id");
   };
 
   // -------------------------------------------------------------
@@ -423,6 +560,7 @@ export default function DoubleRouletteView() {
     setHasConfirmedPick(false);
     setBetDeducted(false);
     setPayoutApplied(false);
+    localStorage.removeItem("nodbet_active_lobby_id");
     setInfoToast("🗑️ Лобби удалено.");
     setTimeout(() => setInfoToast(null), 3000);
   };
@@ -457,6 +595,85 @@ export default function DoubleRouletteView() {
   };
 
   // -------------------------------------------------------------
+  // TOGGLE READY (waiting phase)
+  // -------------------------------------------------------------
+  const handleToggleReady = async () => {
+    if (!activeLobbyId) return;
+    const myPlayer = lobbyPlayers.find((p) => p.user_id === currentUserId);
+    if (!myPlayer) return;
+
+    const newReadyState = !myPlayer.is_ready;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from("nodbet_double_lobby_players")
+          .update({ is_ready: newReadyState })
+          .eq("lobby_id", activeLobbyId)
+          .eq("user_id", currentUserId);
+      } catch {
+        setErrorToast("Не удалось изменить статус готовности");
+        setTimeout(() => setErrorToast(null), 3000);
+      }
+    } else {
+      setLobbyPlayers((prev) =>
+        prev.map((p) =>
+          p.user_id === currentUserId ? { ...p, is_ready: newReadyState } : p
+        )
+      );
+    }
+  };
+
+  // -------------------------------------------------------------
+  // AUTO CONFIRM (when timer runs out)
+  // -------------------------------------------------------------
+  const handleAutoConfirm = async () => {
+    if (!activeLobbyId || hasConfirmedPickRef.current) return;
+
+    // Pick a random bonus if not selected
+    const randomBonus = mySelectedBonusRef.current || pickRandomDoubleBonus();
+    const betAmt = effectiveBetAmountRef.current;
+
+    // Deduct bet from balance
+    const { ok } = doubleRouletteDeduct(betAmt);
+    if (!ok) {
+      setErrorToast("Авто-выбор: недостаточно средств для ставки!");
+      setTimeout(() => setErrorToast(null), 3000);
+      return;
+    }
+
+    setMySelectedBonus(randomBonus);
+    setHasConfirmedPick(true);
+    setBetDeducted(true);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from("nodbet_double_lobby_players")
+          .update({
+            bet_amount: betAmt,
+            selected_bonus_id: randomBonus,
+            is_ready: true,
+          })
+          .eq("lobby_id", activeLobbyId)
+          .eq("user_id", currentUserId);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      setLobbyPlayers((prev) =>
+        prev.map((p) =>
+          p.user_id === currentUserId
+            ? { ...p, bet_amount: betAmt, selected_bonus_id: randomBonus, is_ready: true }
+            : p
+        )
+      );
+    }
+    setInfoToast(`⏱️ Время вышло! Автоматически выбран бонус: ${DOUBLE_BONUSES[randomBonus].label}`);
+    setTimeout(() => setInfoToast(null), 4000);
+  };
+
+  // -------------------------------------------------------------
   // START GAME BY HOST
   // -------------------------------------------------------------
   const handleStartGameByHost = async () => {
@@ -471,15 +688,33 @@ export default function DoubleRouletteView() {
     spinAppliedRef.current = false;
 
     if (isSupabaseConfigured && supabase) {
-      await supabase
-        .from("nodbet_double_lobbies")
-        .update({
-          status: "betting",
-          timer_ends_at: timerEndsAt,
-          winning_bonus_id: null,
-        })
-        .eq("id", activeLobby.id);
+      try {
+        // Reset player picks and set everyone to not ready for the betting/choosing phase
+        await supabase
+          .from("nodbet_double_lobby_players")
+          .update({
+            selected_bonus_id: null,
+            is_ready: false,
+            bet_amount: activeLobby.min_bet,
+          })
+          .eq("lobby_id", activeLobby.id);
+
+        await supabase
+          .from("nodbet_double_lobbies")
+          .update({
+            status: "betting",
+            timer_ends_at: timerEndsAt,
+            winning_bonus_id: null,
+          })
+          .eq("id", activeLobby.id);
+      } catch (err) {
+        setErrorToast("Ошибка запуска раунда");
+        setTimeout(() => setErrorToast(null), 3000);
+      }
     } else {
+      setLobbyPlayers((prev) =>
+        prev.map((p) => ({ ...p, is_ready: false, selected_bonus_id: null, bet_amount: activeLobby.min_bet }))
+      );
       setActiveLobby((prev) => (prev ? { ...prev, status: "betting", timer_ends_at: timerEndsAt, winning_bonus_id: null } : null));
     }
   };
@@ -503,9 +738,17 @@ export default function DoubleRouletteView() {
 
       if (diff <= 0) {
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-        // Time expired! If host, trigger wheel spin
+        
+        // Auto confirm if we haven't done so yet
+        if (!hasConfirmedPickRef.current) {
+          handleAutoConfirm();
+        }
+
+        // Host triggers wheel spin after a short delay (e.g., 1.5 seconds) to let other players' auto-confirms write to database
         if (activeLobby.host_id === currentUserId) {
-          triggerWheelSpin();
+          setTimeout(() => {
+            triggerWheelSpin();
+          }, 1500);
         }
       }
     };
@@ -630,19 +873,17 @@ export default function DoubleRouletteView() {
       clearInterval(tickInterval);
       setIsSpinning(false);
 
-      // Compute outcomes for all players in lobby
-      const formattedInputs: DoublePlayerInput[] = lobbyPlayers.map((p) => {
-        const effectiveBonus =
-          p.user_id === currentUserId && !p.selected_bonus_id
-            ? mySelectedBonus || pickRandomDoubleBonus()
-            : p.selected_bonus_id || pickRandomDoubleBonus();
-        const effectiveBet = p.bet_amount || (activeLobby?.min_bet ?? 500);
+      // Compute outcomes for participating players in lobby
+      const participatingPlayers = lobbyPlayers.filter(
+        (p) => p.selected_bonus_id !== null && p.selected_bonus_id !== undefined
+      );
 
+      const formattedInputs: DoublePlayerInput[] = participatingPlayers.map((p) => {
         return {
           userId: p.user_id,
           nickname: p.nickname,
-          betAmount: effectiveBet,
-          selectedBonusId: effectiveBonus,
+          betAmount: p.bet_amount || (activeLobby?.min_bet ?? 500),
+          selectedBonusId: p.selected_bonus_id as DoubleBonusId,
         };
       });
 
@@ -727,16 +968,6 @@ export default function DoubleRouletteView() {
       );
     }
   };
-
-  // Compute effective bet amount based on mode
-  const effectiveBetAmount = useMemo(() => {
-    if (betMode === "all") return balance;
-    if (betMode === "custom") {
-      const val = Math.max(activeLobby?.min_bet ?? 500, parseInt(customBetInput, 10) || (activeLobby?.min_bet ?? 500));
-      return Math.min(balance, val);
-    }
-    return myBetAmount;
-  }, [betMode, balance, customBetInput, myBetAmount, activeLobby?.min_bet]);
 
   // -------------------------------------------------------------
   // RENDER
@@ -1076,20 +1307,65 @@ export default function DoubleRouletteView() {
                 <div className="text-center space-y-4 pt-4 border-t border-white/10">
                   {activeLobby.host_id === currentUserId ? (
                     <div>
-                      <p className="text-xs text-zinc-400 mb-3">
-                        В лобби зашло <b>{lobbyPlayers.length} / {activeLobby.max_players}</b> игроков. Нажмите «Начать игру», когда все в сборе!
+                      <p className="text-sm text-zinc-300 mb-3">
+                        В лобби зашло <b>{lobbyPlayers.length} / {activeLobby.max_players}</b> игроков.
                       </p>
+                      
+                      {lobbyPlayers.length < 2 ? (
+                        <div className="p-4 mb-3 rounded-2xl bg-red-600/10 border border-red-500/20 text-xs text-red-400">
+                          ⚠️ Ожидание соперников (требуется минимум 2 игрока)
+                        </div>
+                      ) : !lobbyPlayers.filter(p => p.user_id !== activeLobby.host_id).every(p => p.is_ready) ? (
+                        <div className="p-4 mb-3 rounded-2xl bg-yellow-600/10 border border-yellow-500/20 text-xs text-yellow-400">
+                          ⏳ Ожидание готовности всех игроков (все соперники должны нажать «Готов»)
+                        </div>
+                      ) : (
+                        <div className="p-4 mb-3 rounded-2xl bg-green-600/10 border border-green-500/20 text-xs text-green-400">
+                          ✅ Все игроки готовы! Вы можете запустить раунд.
+                        </div>
+                      )}
+
                       <button
                         onClick={handleStartGameByHost}
-                        disabled={lobbyPlayers.length < 2}
+                        disabled={
+                          lobbyPlayers.length < 2 ||
+                          !lobbyPlayers.filter(p => p.user_id !== activeLobby.host_id).every(p => p.is_ready)
+                        }
                         className="rounded-2xl bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 px-8 py-4 text-base font-black uppercase text-white shadow-xl shadow-red-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 mx-auto"
                       >
                         <Play size={20} /> Начать 12s раунд ставок
                       </button>
                     </div>
                   ) : (
-                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-zinc-300">
-                      ⌛ Ожидание, пока создатель лобби (<b>{activeLobby.host_nickname}</b>) запустит раунд ставок...
+                    <div className="space-y-4">
+                      {(() => {
+                        const myPlayer = lobbyPlayers.find((p) => p.user_id === currentUserId);
+                        const isReady = myPlayer?.is_ready || false;
+                        return (
+                          <div className="p-5 rounded-2xl bg-white/5 border border-white/10 flex flex-col items-center justify-center gap-3">
+                            <span className="text-xs text-zinc-300">
+                              Статус готовности: {isReady ? (
+                                <b className="text-green-400 font-bold">🟢 ВЫ ГОТОВЫ</b>
+                              ) : (
+                                <b className="text-red-400 font-bold">🔴 ВЫ НЕ ГОТОВЫ</b>
+                              )}
+                            </span>
+                            <button
+                              onClick={handleToggleReady}
+                              className={`rounded-xl px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white transition-all cursor-pointer ${
+                                isReady
+                                  ? "bg-amber-600 hover:bg-amber-500"
+                                  : "bg-green-600 hover:bg-green-500"
+                              }`}
+                            >
+                              {isReady ? "❌ Снять готовность" : "✅ Я готов!"}
+                            </button>
+                            <p className="text-[11px] text-zinc-400">
+                              Ожидание, пока создатель лобби (<b>{activeLobby.host_nickname}</b>) запустит раунд ставок...
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -1303,12 +1579,22 @@ export default function DoubleRouletteView() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          {p.is_ready ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-green-400">
-                              <CheckCircle2 size={13} /> Готов
-                            </span>
+                          {activeLobby?.status === "waiting" ? (
+                            p.is_ready ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-green-400">
+                                <CheckCircle2 size={13} /> Готов
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-bold text-zinc-500">Не готов</span>
+                            )
                           ) : (
-                            <span className="text-[11px] font-bold text-zinc-500">Выбирает...</span>
+                            p.is_ready ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-green-400">
+                                <CheckCircle2 size={13} /> Готов
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-bold text-zinc-500">Выбирает...</span>
+                            )
                           )}
                           {canKick && (
                             <button

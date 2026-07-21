@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Flame,
@@ -64,6 +64,14 @@ export default function NodbetPage() {
 
   const { matches, teams } = useData();
   const [activeTab, setActiveTab] = useState<"roulette" | "double_roulette" | "allornothing" | "line" | "shop" | "my_bets" | "leaderboard">("roulette");
+
+  // Automatically switch to double roulette tab on mount/refresh if the player has an active lobby saved
+  useEffect(() => {
+    const savedLobbyId = localStorage.getItem("nodbet_active_lobby_id");
+    if (savedLobbyId) {
+      setActiveTab("double_roulette");
+    }
+  }, []);
 
   /** Активный режим рулетки определяется выбранной вкладкой. */
   const rouletteMode: RouletteMode = activeTab === "allornothing" ? "allornothing" : "classic";
