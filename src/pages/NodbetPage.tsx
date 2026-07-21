@@ -96,17 +96,6 @@ export default function NodbetPage() {
   // Daily bonus state
   const [bonusToast, setBonusToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (inventory.compensationClaimed250k && !sessionStorage.getItem("njdc_250k_toast_shown_v1")) {
-      sessionStorage.setItem("njdc_250k_toast_shown_v1", "true");
-      setTimeout(() => {
-        setBonusToast("🎁 Компенсация за обновление: вам начислено +250,000 NOD-Коинов!");
-        playSound("jackpot");
-      }, 500);
-      setTimeout(() => setBonusToast(null), 6000);
-    }
-  }, [inventory.compensationClaimed250k]);
-
   const playSound = (kind: "spin" | "win" | "lose" | "jackpot" | "tick" | "bet") => {
     try {
       const urls: Record<string, string> = {
