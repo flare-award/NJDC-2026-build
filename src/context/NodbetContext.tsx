@@ -140,7 +140,6 @@ interface NodbetInventory {
   crownBadge: boolean;
   customStatusText: string | null;
   promoUsed?: boolean;
-  compensationClaimed250k?: boolean;
   /** Разовый пересчёт ставок после фикса логики (пункт 8). */
   betReconcileV1Done?: boolean;
 }
@@ -172,7 +171,6 @@ interface NodbetProfileRow {
   total_won: number | string;
   bets_count: number;
   promo_used?: boolean;
-  compensation_250k_claimed?: boolean;
   bet_reconcile_v1_done?: boolean;
 }
 
@@ -233,7 +231,6 @@ function emptyInventory(): NodbetInventory {
     crownBadge: false,
     customStatusText: null,
     promoUsed: false,
-    compensationClaimed250k: false,
     betReconcileV1Done: false,
   };
 }
@@ -257,7 +254,6 @@ function getInitialState(userId: string): NodbetState {
           crownBadge: !!parsed.inventory?.crownBadge,
           customStatusText: parsed.inventory?.customStatusText ?? null,
           promoUsed: !!parsed.inventory?.promoUsed,
-          compensationClaimed250k: !!parsed.inventory?.compensationClaimed250k,
           betReconcileV1Done: !!parsed.inventory?.betReconcileV1Done,
         },
         bets: Array.isArray(parsed.bets) ? (parsed.bets as NodbetBet[]) : [],
@@ -370,10 +366,6 @@ function stateSnapshot(s: NodbetState) {
     bets: s.bets,
     rouletteHistory: s.rouletteHistory,
   };
-}
-
-function totalWonOf(bets: NodbetBet[], bal: number): number {
-  return bets.filter((b) => b.status === "won").reduce((acc, b) => acc + b.payout, 0) + bal;
 }
 
 /**
@@ -494,7 +486,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
       if (!ownRes.data) {
         const local = getInitialState(uid);
-        const totalWon = local.balance;
         const initialNickname = loadLocalNicknames()[uid] ?? null;
         const profilePayload = {
           user_id: uid,
@@ -510,9 +501,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           crown_badge: local.inventory.crownBadge,
           custom_status_text: local.inventory.customStatusText,
           promo_used: local.inventory.promoUsed,
-          compensation_250k_claimed: local.inventory.compensationClaimed250k,
           bet_reconcile_v1_done: !!local.inventory.betReconcileV1Done,
-          total_won: totalWon,
           bets_count: local.bets.length + local.rouletteHistory.length,
         };
         let { error: createErr } = await supabase.from("nodbet_profiles").upsert({ ...profilePayload, nickname: initialNickname });
@@ -547,7 +536,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           crownBadge: !!p.crown_badge,
           customStatusText: p.custom_status_text ?? null,
           promoUsed: !!p.promo_used,
-          compensationClaimed250k: !!p.compensation_250k_claimed,
           betReconcileV1Done: !!p.bet_reconcile_v1_done,
         },
         bets: (betsRes.data ?? []).map((r) => betFromRow(r as Record<string, unknown>)),
@@ -593,23 +581,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
-
-  // ---------- Разовая компенсация 250,000 NOD-Коинов ----------
-  useEffect(() => {
-    if (!state.inventory.compensationClaimed250k) {
-      setState((prev) => {
-        if (prev.inventory.compensationClaimed250k) return prev;
-        return {
-          ...prev,
-          balance: prev.balance + 250000,
-          inventory: {
-            ...prev.inventory,
-            compensationClaimed250k: true,
-          },
-        };
-      });
-    }
-  }, [state.inventory.compensationClaimed250k]);
 
   // ---------- Realtime ----------
   // ВАЖНО: мы НЕ перезагружаем собственные ставки/спины по realtime.
@@ -667,7 +638,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       pendingSyncRef.current = true;
       try {
         const uid = currentUser.id;
-        const totalWon = totalWonOf(snapshot.bets, snapshot.balance);
         const betsCount = snapshot.bets.length + snapshot.rouletteHistory.length;
 
         let prevSync: ReturnType<typeof stateSnapshot> | null = null;
@@ -691,9 +661,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           crown_badge: snapshot.inventory.crownBadge,
           custom_status_text: snapshot.inventory.customStatusText,
           promo_used: snapshot.inventory.promoUsed,
-          compensation_250k_claimed: snapshot.inventory.compensationClaimed250k,
           bet_reconcile_v1_done: !!snapshot.inventory.betReconcileV1Done,
-          total_won: totalWon,
           bets_count: betsCount,
         });
         if (profileErr) throw profileErr;
@@ -943,7 +911,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
               coin_magnet: state.inventory.coinMagnet,
               crown_badge: state.inventory.crownBadge,
               custom_status_text: state.inventory.customStatusText,
-              total_won: state.balance,
               bets_count: 0,
             });
             if (insErr && insErr.code === "23505") {
@@ -972,7 +939,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
               crown_badge: state.inventory.crownBadge,
               custom_status_text: state.inventory.customStatusText,
               promo_used: state.inventory.promoUsed,
-              compensation_250k_claimed: state.inventory.compensationClaimed250k,
               total_won: 0,
               bets_count: 0,
             },
@@ -1257,8 +1223,9 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
   // ---------- Топ Хайроллеров ----------
   const highRollers = useMemo<HighRoller[]>(() => {
-    const totalWonOfLocal = (bets: NodbetBet[], bal: number) =>
-      bets.filter((b) => b.status === "won").reduce((acc, b) => acc + b.payout, 0) + bal;
+    const totalWonOfLocal = (bets: NodbetBet[], spins: RouletteSpin[]) =>
+      bets.filter((b) => b.status === "won").reduce((acc, b) => acc + b.payout, 0) +
+      spins.filter((spin) => spin.wonCoins > 0).reduce((acc, spin) => acc + spin.wonCoins, 0);
 
     if (isSupabaseConfigured) {
       const rows: HighRoller[] = profiles.map((p) => ({
@@ -1278,7 +1245,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         id: user ? user.id : "current_user_hr",
         nickname: displayNickname,
         balance: state.balance,
-        totalWon: totalWonOfLocal(state.bets, state.balance),
+        totalWon: totalWonOfLocal(state.bets, state.rouletteHistory),
         betsCount: state.bets.length + state.rouletteHistory.length,
         level,
         customStatus: state.inventory.customStatusOwned ? state.inventory.customStatusText : null,
@@ -1306,7 +1273,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       id: "current_user_hr",
       nickname: displayNickname,
       balance: state.balance,
-      totalWon: totalWonOfLocal(state.bets, state.balance),
+      totalWon: totalWonOfLocal(state.bets, state.rouletteHistory),
       betsCount: state.bets.length + state.rouletteHistory.length,
       level,
       customStatus: state.inventory.customStatusOwned ? state.inventory.customStatusText : null,

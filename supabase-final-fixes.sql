@@ -86,13 +86,9 @@ alter table if exists nodbet_roulette_spins alter column won_coins type bigint;
 -- 5. Индексы для быстрого доступа по балансу (топ хайроллеров)
 create index if not exists nodbet_profiles_balance_desc_idx on nodbet_profiles (balance desc);
 
--- 6. Компенсация и промокод колонки (если вдруг нет — добавим)
+-- 6. Колонки промокода и короны (если вдруг нет — добавим)
 alter table if exists nodbet_profiles add column if not exists promo_used boolean not null default false;
-alter table if exists nodbet_profiles add column if not exists compensation_250k_claimed boolean not null default false;
 alter table if exists nodbet_profiles add column if not exists crown_badge boolean not null default false;
-
--- 7. Выдать компенсацию 250k тем, кому ещё не выдавали (на всякий случай)
-update nodbet_profiles set balance = balance + 250000, compensation_250k_claimed = true where compensation_250k_claimed = false;
 
 -- 8. Проверка рулетки: убедиться что колонки bonus_id и is_negative есть
 alter table if exists nodbet_roulette_spins add column if not exists bonus_id text not null default 'normal';
