@@ -10,6 +10,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   SmilePlus,
+  Trash2,
 } from "lucide-react";
 import { useNodbet } from "../context/NodbetContext";
 import { useUserAuth } from "../context/UserAuthContext";
@@ -26,6 +27,10 @@ import { BONUSES, type BonusId } from "../utils/roulette";
 //    со счётчиками и эмодзи (таблица nodbet_chat_reactions +
 //    RPC nodbet_chat_toggle_reaction). Наведение на реакцию
 //    показывает, кто её поставил.
+//  • Свои сообщения можно удалить (кнопка 🗑 в полоске реакций,
+//    с двухшаговым подтверждением «Удалить?»). RLS-политика БД
+//    разрешает удалять только собственные сообщения; реакции
+//    удаляются каскадом вместе с сообщением.
 //  • Realtime + запасной поллинг каждые 5 секунд.
 // ============================================================
 
@@ -111,6 +116,47 @@ function WhoReacted({ rows }: { rows: ReactionRow[] }) {
   );
 }
 
+// Кнопка удаления СВОЕГО сообщения. Двухшаговая: первый клик по
+// бледной иконке корзины превращает её в красную «Удалить?»,
+// второй клик — удаляет. Через ~3 секунды бездействия возвращается
+// в исходное состояние (защита от случайного удаления).
+function DeleteMessageButton({
+  confirming,
+  busy,
+  onRequest,
+  onConfirm,
+}: {
+  confirming: boolean;
+  busy: boolean;
+  onRequest: () => void;
+  onConfirm: () => void;
+}) {
+  if (confirming) {
+    return (
+      <button
+        type="button"
+        onClick={onConfirm}
+        disabled={busy}
+        title="Подтвердить удаление"
+        className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-black text-red-300 bg-red-500/15 hover:bg-red-500/25 transition-colors cursor-pointer disabled:opacity-50"
+      >
+        {busy ? <RefreshCw size={11} className="animate-spin" /> : <Trash2 size={11} />}
+        Удалить?
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onRequest}
+      title="Удалить сообщение"
+      className="flex items-center rounded-lg px-1.5 py-0.5 text-zinc-700 hover:text-red-400 hover:bg-white/5 transition-colors cursor-pointer"
+    >
+      <Trash2 size={12} />
+    </button>
+  );
+}
+
 // Полоска реакций под сообщением — нарочно бледная (text-zinc-600),
 // чтобы не перетягивать на себя внимание; оживает при наведении.
 function ReactionBar({
@@ -121,6 +167,11 @@ function ReactionBar({
   pickerOpen,
   onTogglePicker,
   onToggle,
+  canDelete,
+  confirmingDelete,
+  deleteBusy,
+  onRequestDelete,
+  onConfirmDelete,
 }: {
   messageId: number;
   isMine: boolean;
@@ -129,6 +180,11 @@ function ReactionBar({
   pickerOpen: boolean;
   onTogglePicker: () => void;
   onToggle: (messageId: number, reaction: string) => void;
+  canDelete: boolean;
+  confirmingDelete: boolean;
+  deleteBusy: boolean;
+  onRequestDelete: () => void;
+  onConfirmDelete: () => void;
 }) {
   const likeRows = agg?.like ?? [];
   const dislikeRows = agg?.dislike ?? [];
@@ -241,6 +297,16 @@ function ReactionBar({
           </button>
         );
       })}
+
+      {/* Удаление своего сообщения — в самом конце полоски */}
+      {canDelete && (
+        <DeleteMessageButton
+          confirming={confirmingDelete}
+          busy={deleteBusy}
+          onRequest={onRequestDelete}
+          onConfirm={onConfirmDelete}
+        />
+      )}
     </div>
   );
 }
@@ -260,6 +326,8 @@ export default function NodbetChat() {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCount, setShareCount] = useState<number>(3);
   const [pickerOpenFor, setPickerOpenFor] = useState<number | null>(null);
+  const [confirmDeleteFor, setConfirmDeleteFor] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -267,6 +335,8 @@ export default function NodbetChat() {
   const minIdRef = useRef<number | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const reactionPendingRef = useRef<Set<string>>(new Set());
+  const deletePendingRef = useRef<Set<number>>(new Set());
+  const deleteConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canWrite = isSupabaseConfigured && !!user;
 
@@ -303,6 +373,15 @@ export default function NodbetChat() {
     },
     [scrollToBottom]
   );
+
+  // Локальное удаление сообщения и его реакций из состояния
+  // (используется и при собственном удалении, и по realtime-событию).
+  const removeMessageLocally = useCallback((messageId: number) => {
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    setReactions((prev) => prev.filter((r) => r.message_id !== messageId));
+    setPickerOpenFor((cur) => (cur === messageId ? null : cur));
+    setConfirmDeleteFor((cur) => (cur === messageId ? null : cur));
+  }, []);
 
   // ---------- Реакции: загрузка ----------
   // Перечитывает реакции для указанных сообщений и заменяет их в
@@ -418,6 +497,12 @@ export default function NodbetChat() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "nodbet_chat_messages" }, (payload) => {
         appendMessages([payload.new as ChatMessage]);
       })
+      // DELETE: приходит как минимум первичный ключ id — этого достаточно,
+      // чтобы убрать сообщение (и его реакции) из отображаемой истории.
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "nodbet_chat_messages" }, (payload) => {
+        const old = payload.old as Partial<ChatMessage>;
+        if (old.id) removeMessageLocally(old.id);
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "nodbet_chat_reactions" }, (payload) => {
         const row = payload.new as ReactionRow;
         setReactions((prev) => (prev.some((r) => r.id === row.id) ? prev : [...prev, row]));
@@ -456,7 +541,7 @@ export default function NodbetChat() {
       clearInterval(poll);
       client.removeChannel(channel);
     };
-  }, [appendMessages, fetchNewer, fetchLatest, fetchReactions]);
+  }, [appendMessages, fetchNewer, fetchLatest, fetchReactions, removeMessageLocally]);
 
   // ---------- Реакции: тоггл через RPC ----------
   const toggleReaction = useCallback(
@@ -509,6 +594,51 @@ export default function NodbetChat() {
       }
     },
     [user, displayNickname, showError]
+  );
+
+  // ---------- Удаление своих сообщений ----------
+  // Первый клик по корзине: включаем режим подтверждения на 3 секунды.
+  const requestDelete = useCallback((messageId: number) => {
+    setPickerOpenFor(null);
+    setConfirmDeleteFor(messageId);
+    if (deleteConfirmTimerRef.current) clearTimeout(deleteConfirmTimerRef.current);
+    deleteConfirmTimerRef.current = setTimeout(() => {
+      setConfirmDeleteFor((cur) => (cur === messageId ? null : cur));
+    }, 3000);
+  }, []);
+
+  // Второй клик: фактическое удаление. RLS-политика БД пропустит
+  // удаление только если сообщение принадлежит текущему пользователю.
+  const handleDelete = useCallback(
+    async (messageId: number) => {
+      if (!isSupabaseConfigured || !supabase || !user) return;
+      if (deletePendingRef.current.has(messageId)) return; // защита от двойного клика
+      deletePendingRef.current.add(messageId);
+      setDeletingId(messageId);
+      setConfirmDeleteFor(null);
+      try {
+        // count:'exact' → узнаём, удалилась ли строка (а не «0 строк по RLS»).
+        const { count, error } = await supabase
+          .from("nodbet_chat_messages")
+          .delete({ count: "exact" })
+          .eq("id", messageId);
+        if (error) {
+          showError("Не удалось удалить сообщение");
+          return;
+        }
+        if (!count) {
+          showError("Можно удалять только свои сообщения");
+          return;
+        }
+        removeMessageLocally(messageId);
+      } catch {
+        showError("Ошибка сети. Попробуйте ещё раз.");
+      } finally {
+        deletePendingRef.current.delete(messageId);
+        setDeletingId(null);
+      }
+    },
+    [user, showError, removeMessageLocally]
   );
 
   // ---------- Отправка ----------
@@ -610,6 +740,11 @@ export default function NodbetChat() {
       pickerOpen={pickerOpenFor === m.id}
       onTogglePicker={() => setPickerOpenFor((cur) => (cur === m.id ? null : m.id))}
       onToggle={toggleReaction}
+      canDelete={isMine && canWrite}
+      confirmingDelete={confirmDeleteFor === m.id}
+      deleteBusy={deletingId === m.id}
+      onRequestDelete={() => requestDelete(m.id)}
+      onConfirmDelete={() => void handleDelete(m.id)}
     />
   );
 
