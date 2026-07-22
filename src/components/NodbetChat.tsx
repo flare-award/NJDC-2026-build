@@ -1,5 +1,16 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { MessageSquare, Send, Share2, X, RefreshCw, LogIn, ChevronUp } from "lucide-react";
+import {
+  MessageSquare,
+  Send,
+  Share2,
+  X,
+  RefreshCw,
+  LogIn,
+  ChevronUp,
+  ThumbsUp,
+  ThumbsDown,
+  SmilePlus,
+} from "lucide-react";
 import { useNodbet } from "../context/NodbetContext";
 import { useUserAuth } from "../context/UserAuthContext";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient";
@@ -11,6 +22,10 @@ import { BONUSES, type BonusId } from "../utils/roulette";
 //  • История хранится в Supabase (таблица nodbet_chat_messages).
 //  • Кнопка «Поделиться бонусами» публикует последние выпавшие
 //    сектора рулетки в виде фишек (kind='share').
+//  • Под сообщениями — аккуратная полоска реакций: лайк/дизлайк
+//    со счётчиками и эмодзи (таблица nodbet_chat_reactions +
+//    RPC nodbet_chat_toggle_reaction). Наведение на реакцию
+//    показывает, кто её поставил.
 //  • Realtime + запасной поллинг каждые 5 секунд.
 // ============================================================
 
@@ -29,7 +44,33 @@ interface ChatMessage {
   created_at: string;
 }
 
+interface ReactionRow {
+  id: number;
+  message_id: number;
+  user_id: string;
+  nickname: string;
+  reaction: string; // 'like' | 'dislike' | эмодзи
+}
+
+interface ReactionAgg {
+  like: ReactionRow[];
+  dislike: ReactionRow[];
+  emojis: Array<[string, ReactionRow[]]>; // в порядке первого появления
+}
+
+interface ToggleReactionResponse {
+  ok: boolean;
+  action: "added" | "removed";
+  reaction: string;
+  replaced: boolean;
+  row?: ReactionRow;
+}
+
 const PAGE_SIZE = 30;
+
+// Белый список эмодзи — должен совпадать с CHECK-ограничением
+// в supabase-chat-reactions-migration.sql
+const EMOJI_CHOICES = ["❤️", "🔥", "😂", "😮", "😢", "👏", "💀", "🎉", "🤝", "💪", "🍀", "🤡"];
 
 function timeLabel(iso: string): string {
   try {
@@ -56,11 +97,160 @@ function BonusChip({ bonus }: { bonus: SharedBonus }) {
   );
 }
 
+// Всплывающая подсказка «кто поставил реакцию»
+function WhoReacted({ rows }: { rows: ReactionRow[] }) {
+  if (!rows.length) return null;
+  const names = rows.map((r) => r.nickname || "Игрок");
+  const shown = names.slice(0, 8);
+  const extra = names.length - shown.length;
+  return (
+    <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 hidden max-w-[240px] -translate-x-1/2 truncate whitespace-nowrap rounded-lg border border-white/10 bg-black/95 px-2 py-1 text-[10px] font-bold text-zinc-200 shadow-xl group-hover:block">
+      {shown.join(", ")}
+      {extra > 0 ? ` и ещё ${extra}` : ""}
+    </span>
+  );
+}
+
+// Полоска реакций под сообщением — нарочно бледная (text-zinc-600),
+// чтобы не перетягивать на себя внимание; оживает при наведении.
+function ReactionBar({
+  messageId,
+  isMine,
+  agg,
+  userId,
+  pickerOpen,
+  onTogglePicker,
+  onToggle,
+}: {
+  messageId: number;
+  isMine: boolean;
+  agg: ReactionAgg | undefined;
+  userId: string | null;
+  pickerOpen: boolean;
+  onTogglePicker: () => void;
+  onToggle: (messageId: number, reaction: string) => void;
+}) {
+  const likeRows = agg?.like ?? [];
+  const dislikeRows = agg?.dislike ?? [];
+  const emojiEntries = agg?.emojis ?? [];
+  const myLike = !!userId && likeRows.some((r) => r.user_id === userId);
+  const myDislike = !!userId && dislikeRows.some((r) => r.user_id === userId);
+
+  const baseBtn =
+    "group relative flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-bold transition-colors cursor-pointer";
+
+  return (
+    <div className={`mt-1 flex flex-wrap items-center gap-1 ${isMine ? "justify-end" : "justify-start"}`}>
+      {/* Кнопка «добавить реакцию» + пикер эмодзи */}
+      <span className="relative">
+        <button
+          type="button"
+          onClick={onTogglePicker}
+          title="Добавить реакцию"
+          className={`${baseBtn} ${pickerOpen ? "bg-white/10 text-zinc-200" : "text-zinc-600 hover:text-zinc-300 hover:bg-white/5"}`}
+        >
+          <SmilePlus size={12} />
+        </button>
+        {pickerOpen && (
+          <>
+            {/* Прозрачная подложка для закрытия кликом мимо */}
+            <button
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              onClick={onTogglePicker}
+              className="fixed inset-0 z-30 cursor-default bg-transparent"
+            />
+            <div
+              className={`absolute bottom-7 z-40 ${isMine ? "right-0" : "left-0"} grid w-[172px] grid-cols-6 gap-0.5 rounded-xl border border-white/10 bg-[#1a1a20] p-1.5 shadow-2xl`}
+            >
+              {EMOJI_CHOICES.map((emoji) => {
+                const rows = emojiEntries.find(([e]) => e === emoji)?.[1] ?? [];
+                const mineEmoji = !!userId && rows.some((r) => r.user_id === userId);
+                return (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => onToggle(messageId, emoji)}
+                    title={mineEmoji ? "Убрать реакцию" : "Поставить реакцию"}
+                    className={`rounded-md p-0.5 text-sm hover:bg-white/10 cursor-pointer ${mineEmoji ? "bg-yellow-500/25" : ""}`}
+                  >
+                    {emoji}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </span>
+
+      {/* Лайк */}
+      <button
+        type="button"
+        onClick={() => onToggle(messageId, "like")}
+        title="Нравится"
+        className={`${baseBtn} ${
+          myLike
+            ? "text-green-400 bg-green-500/10"
+            : likeRows.length
+              ? "text-zinc-400 bg-white/5 hover:text-zinc-200"
+              : "text-zinc-600 hover:text-zinc-300 hover:bg-white/5"
+        }`}
+      >
+        <ThumbsUp size={12} className={myLike ? "fill-green-400/20" : ""} />
+        {likeRows.length > 0 && <span>{likeRows.length}</span>}
+        <WhoReacted rows={likeRows} />
+      </button>
+
+      {/* Дизлайк */}
+      <button
+        type="button"
+        onClick={() => onToggle(messageId, "dislike")}
+        title="Не нравится"
+        className={`${baseBtn} ${
+          myDislike
+            ? "text-red-400 bg-red-500/10"
+            : dislikeRows.length
+              ? "text-zinc-400 bg-white/5 hover:text-zinc-200"
+              : "text-zinc-600 hover:text-zinc-300 hover:bg-white/5"
+        }`}
+      >
+        <ThumbsDown size={12} className={myDislike ? "fill-red-400/20" : ""} />
+        {dislikeRows.length > 0 && <span>{dislikeRows.length}</span>}
+        <WhoReacted rows={dislikeRows} />
+      </button>
+
+      {/* Поставленные эмодзи-реакции */}
+      {emojiEntries.map(([emoji, rows]) => {
+        const mineEmoji = !!userId && rows.some((r) => r.user_id === userId);
+        return (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => onToggle(messageId, emoji)}
+            title={mineEmoji ? "Убрать реакцию" : "Поставить такую же"}
+            className={`${baseBtn} border ${
+              mineEmoji
+                ? "border-yellow-500/60 bg-yellow-500/10"
+                : "border-white/10 bg-white/5 hover:bg-white/10"
+            }`}
+          >
+            <span className="text-[11px] leading-none">{emoji}</span>
+            {rows.length > 1 && <span className={mineEmoji ? "text-yellow-300" : "text-zinc-400"}>{rows.length}</span>}
+            <WhoReacted rows={rows} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function NodbetChat() {
   const { displayNickname, rouletteHistory } = useNodbet();
   const { user } = useUserAuth();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [reactions, setReactions] = useState<ReactionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -69,13 +259,20 @@ export default function NodbetChat() {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCount, setShareCount] = useState<number>(3);
+  const [pickerOpenFor, setPickerOpenFor] = useState<number | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const maxIdRef = useRef(0);
   const minIdRef = useRef<number | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const reactionPendingRef = useRef<Set<string>>(new Set());
 
   const canWrite = isSupabaseConfigured && !!user;
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const showError = useCallback((msg: string) => {
     setErrorText(msg);
@@ -107,7 +304,33 @@ export default function NodbetChat() {
     [scrollToBottom]
   );
 
-  // ---------- Загрузка ----------
+  // ---------- Реакции: загрузка ----------
+  // Перечитывает реакции для указанных сообщений и заменяет их в
+  // состоянии (так подхватываются и постановки, и снятия).
+  const fetchReactions = useCallback(async (messageIds: number[]) => {
+    if (!isSupabaseConfigured || !supabase || messageIds.length === 0) return;
+    const unique = Array.from(new Set(messageIds));
+    try {
+      for (let i = 0; i < unique.length; i += 100) {
+        const part = unique.slice(i, i + 100);
+        const { data, error } = await supabase
+          .from("nodbet_chat_reactions")
+          .select("*")
+          .in("message_id", part)
+          .order("id", { ascending: true })
+          .limit(4000);
+        if (!error && data) {
+          const partSet = new Set(part);
+          const rows = data as ReactionRow[];
+          setReactions((prev) => [...prev.filter((r) => !partSet.has(r.message_id)), ...rows]);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // ---------- Сообщения: загрузка ----------
   const fetchLatest = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
       setLoading(false);
@@ -128,13 +351,14 @@ export default function NodbetChat() {
           minIdRef.current = rows[0].id;
         }
         setTimeout(scrollToBottom, 50);
+        void fetchReactions(rows.map((r) => r.id));
       }
     } catch {
       /* ignore */
     } finally {
       setLoading(false);
     }
-  }, [scrollToBottom]);
+  }, [scrollToBottom, fetchReactions]);
 
   const fetchNewer = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase || maxIdRef.current === 0) return;
@@ -170,6 +394,7 @@ export default function NodbetChat() {
             return [...fresh, ...prev];
           });
           minIdRef.current = rows[0].id;
+          void fetchReactions(rows.map((r) => r.id));
         }
         setHasMore(data.length === PAGE_SIZE);
       }
@@ -178,13 +403,13 @@ export default function NodbetChat() {
     } finally {
       setLoadingOlder(false);
     }
-  }, [loadingOlder]);
+  }, [loadingOlder, fetchReactions]);
 
   useEffect(() => {
     fetchLatest();
   }, [fetchLatest]);
 
-  // Realtime + запасной поллинг
+  // Realtime (сообщения + реакции) + запасной поллинг
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     const client = supabase;
@@ -193,19 +418,98 @@ export default function NodbetChat() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "nodbet_chat_messages" }, (payload) => {
         appendMessages([payload.new as ChatMessage]);
       })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "nodbet_chat_reactions" }, (payload) => {
+        const row = payload.new as ReactionRow;
+        setReactions((prev) => (prev.some((r) => r.id === row.id) ? prev : [...prev, row]));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "nodbet_chat_reactions" }, (payload) => {
+        const old = payload.old as Partial<ReactionRow>;
+        setReactions((prev) =>
+          prev.filter((r) => {
+            if (old.id && r.id === old.id) return false;
+            if (
+              old.message_id &&
+              old.user_id &&
+              old.reaction &&
+              r.message_id === old.message_id &&
+              r.user_id === old.user_id &&
+              r.reaction === old.reaction
+            ) {
+              return false;
+            }
+            return true;
+          })
+        );
+      })
       .subscribe();
     const poll = setInterval(() => {
       // Если история пуста (maxId ещё неизвестен) — подтягиваем последние,
       // иначе догружаем только новые после известного курсора.
       if (maxIdRef.current === 0) void fetchLatest();
       else void fetchNewer();
+      // Реакции видимых сообщений (запасной вариант на случай,
+      // если realtime-событие потерялось). Ограничиваем последними 120.
+      void fetchReactions(messagesRef.current.map((m) => m.id).slice(-120));
     }, 5000);
 
     return () => {
       clearInterval(poll);
       client.removeChannel(channel);
     };
-  }, [appendMessages, fetchNewer, fetchLatest]);
+  }, [appendMessages, fetchNewer, fetchLatest, fetchReactions]);
+
+  // ---------- Реакции: тоггл через RPC ----------
+  const toggleReaction = useCallback(
+    async (messageId: number, reaction: string) => {
+      if (!isSupabaseConfigured || !supabase) return;
+      if (!user) {
+        showError("Войдите в аккаунт, чтобы ставить реакции");
+        return;
+      }
+      const key = `${messageId}:${reaction}`;
+      if (reactionPendingRef.current.has(key)) return; // защита от двойного клика
+      reactionPendingRef.current.add(key);
+      setPickerOpenFor(null);
+      try {
+        const { data, error } = await supabase.rpc("nodbet_chat_toggle_reaction", {
+          p_message_id: messageId,
+          p_reaction: reaction,
+          p_nickname: displayNickname.slice(0, 32),
+        });
+        if (error) {
+          const msg = error.message || "";
+          if (msg.includes("Не больше")) showError(msg);
+          else if (msg.includes("авторизац")) showError("Войдите в аккаунт, чтобы ставить реакции");
+          else showError("Не удалось поставить реакцию");
+          return;
+        }
+        const res = data as ToggleReactionResponse | null;
+        if (!res?.ok) return;
+        setReactions((prev) => {
+          let next = prev;
+          if (res.action === "removed") {
+            next = next.filter(
+              (r) => !(r.message_id === messageId && r.user_id === user.id && r.reaction === reaction)
+            );
+          } else if (res.row) {
+            if (res.replaced) {
+              const other = reaction === "like" ? "dislike" : "like";
+              next = next.filter(
+                (r) => !(r.message_id === messageId && r.user_id === user.id && r.reaction === other)
+              );
+            }
+            if (!next.some((r) => r.id === res.row!.id)) next = [...next, res.row!];
+          }
+          return next;
+        });
+      } catch {
+        showError("Ошибка сети. Попробуйте ещё раз.");
+      } finally {
+        reactionPendingRef.current.delete(key);
+      }
+    },
+    [user, displayNickname, showError]
+  );
 
   // ---------- Отправка ----------
   const insertMessage = useCallback(
@@ -276,6 +580,38 @@ export default function NodbetChat() {
     }
     setSending(false);
   }, [sending, shareableSpins, shareCountClamped, input, insertMessage, fetchNewer]);
+
+  // ---------- Агрегация реакций по сообщениям ----------
+  const reactionsByMessage = useMemo(() => {
+    const map = new Map<number, ReactionAgg>();
+    for (const r of reactions) {
+      let agg = map.get(r.message_id);
+      if (!agg) {
+        agg = { like: [], dislike: [], emojis: [] };
+        map.set(r.message_id, agg);
+      }
+      if (r.reaction === "like") agg.like.push(r);
+      else if (r.reaction === "dislike") agg.dislike.push(r);
+      else {
+        const found = agg.emojis.find(([e]) => e === r.reaction);
+        if (found) found[1].push(r);
+        else agg.emojis.push([r.reaction, [r]]);
+      }
+    }
+    return map;
+  }, [reactions]);
+
+  const renderReactionBar = (m: ChatMessage, isMine: boolean) => (
+    <ReactionBar
+      messageId={m.id}
+      isMine={isMine}
+      agg={reactionsByMessage.get(m.id)}
+      userId={user?.id ?? null}
+      pickerOpen={pickerOpenFor === m.id}
+      onTogglePicker={() => setPickerOpenFor((cur) => (cur === m.id ? null : m.id))}
+      onToggle={toggleReaction}
+    />
+  );
 
   // ---------- Рендер ----------
   return (
@@ -359,6 +695,7 @@ export default function NodbetChat() {
                     <BonusChip key={`${m.id}_${i}`} bonus={b} />
                   ))}
                 </div>
+                {renderReactionBar(m, isMine)}
               </div>
             );
           }
@@ -377,6 +714,7 @@ export default function NodbetChat() {
                 </div>
                 <p className="mt-0.5 text-xs text-zinc-100 break-words whitespace-pre-wrap">{m.text}</p>
               </div>
+              {renderReactionBar(m, isMine)}
             </div>
           );
         })}
