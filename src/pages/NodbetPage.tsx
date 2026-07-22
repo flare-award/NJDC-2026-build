@@ -18,6 +18,7 @@ import {
 import { useNodbet, NODBET_PERKS, AURA_COLORS, type NodbetPerkId, type RouletteSpin } from "../context/NodbetContext";
 import { useData } from "../context/DataContext";
 import DoubleRouletteView from "../components/DoubleRouletteView";
+import NodbetChat from "../components/NodbetChat";
 import {
   BONUSES,
   ROULETTE_PRESETS,
@@ -558,8 +559,13 @@ export default function NodbetPage() {
         {/* ======================= TAB 1: ROULETTE (classic + allornothing) ======================= */}
         {(activeTab === "roulette" || activeTab === "allornothing") && (
           <div className="grid gap-10 lg:grid-cols-12 items-start">
+            {/* CHAT — мини-окошко слева от колеса (на узких экранах — под ним) */}
+            <div className="order-3 lg:order-3 lg:col-span-12 xl:order-1 xl:col-span-3">
+              <NodbetChat />
+            </div>
+
             {/* WHEEL CONTROLLER */}
-            <div className="lg:col-span-7 rounded-3xl border border-red-500/20 bg-[#141414] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
+            <div className="order-1 lg:order-1 lg:col-span-7 xl:order-2 xl:col-span-5 rounded-3xl border border-red-500/20 bg-[#141414] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
               <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-red-600 via-yellow-400 to-red-600" />
 
               <div className="text-center">
@@ -768,7 +774,7 @@ export default function NodbetPage() {
             </div>
 
             {/* PAYTABLE & ODDS INFO */}
-            <div className="lg:col-span-5 space-y-6">
+            <div className="order-2 lg:order-2 lg:col-span-5 xl:order-3 xl:col-span-4 space-y-6">
               <div className="rounded-3xl border border-white/10 bg-[#141414] p-6">
                 <div className="flex items-center gap-2 text-yellow-400 mb-4">
                   <HelpCircle size={20} />
