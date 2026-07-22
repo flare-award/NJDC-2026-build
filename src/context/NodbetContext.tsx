@@ -294,15 +294,15 @@ export interface NodbetContextValue {
     teamName: string,
     amount: number,
     overtimePrediction: boolean
-  ) => { ok: boolean; error?: string };
-  cancelBet: (betId: string) => { ok: boolean; error?: string; refund?: number };
+  ) => Promise<{ ok: boolean; error?: string }>;
+  cancelBet: (betId: string) => Promise<{ ok: boolean; error?: string; refund?: number }>;
   spinRoulette: (
     betAmount: number,
     mode: RouletteMode
-  ) => { ok: boolean; results: RouletteSpin[]; error?: string };
-  commitSpin: (results: RouletteSpin[]) => void;
-  buyPerk: (perkId: NodbetPerkId) => { ok: boolean; error?: string };
-  claimDailyBonus: () => { ok: boolean; error?: string; reward?: number };
+  ) => Promise<{ ok: boolean; results: RouletteSpin[]; error?: string; balance?: number; xp?: number }>;
+  commitSpin: (results: RouletteSpin[], serverTotals?: { balance: number; xp: number }) => void;
+  buyPerk: (perkId: NodbetPerkId) => Promise<{ ok: boolean; error?: string }>;
+  claimDailyBonus: () => Promise<{ ok: boolean; error?: string; reward?: number }>;
   activatePromoCode: (code: string) => Promise<{ ok: boolean; error?: string }>;
   hasRadar: boolean;
   hasDoubleSpin: boolean;
@@ -313,6 +313,10 @@ export interface NodbetContextValue {
   doubleRouletteDeduct: (amount: number) => { ok: boolean; error?: string };
   /** Award coins after double roulette spin */
   doubleRoulettePayout: (amount: number, xpGain: number) => void;
+  /** Ставка в Двойной-Рулетке: в онлайн-режиме списание делает сервер (RPC). */
+  doubleRoulettePlaceBet: (lobbyId: string, amount: number, bonusId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Перечитать свой профиль с сервера (баланс/XP/инвентарь = истина сервера). */
+  refreshOwnProfile: () => Promise<void>;
 }
 
 const LOCAL_STORAGE_PREFIX = "njdc_nodbet_state_v3_";
@@ -428,24 +432,6 @@ function betFromRow(row: Record<string, unknown>): NodbetBet {
   };
 }
 
-function betToRow(userId: string, b: NodbetBet) {
-  return {
-    id: b.id,
-    user_id: userId,
-    match_id: b.matchId,
-    match_title: b.matchTitle,
-    map_index: b.mapIndex,
-    team_choice: b.teamChoice,
-    team_name: b.teamName,
-    amount: Math.round(b.amount),
-    odds: Number(b.odds.toFixed(2)),
-    overtime_prediction: b.overtimePrediction,
-    status: b.status,
-    created_at: b.createdAt,
-    payout: Math.round(b.payout),
-  };
-}
-
 function spinFromRow(row: Record<string, unknown>): RouletteSpin {
   const bonusId = (row.bonus_id as BonusId) || "normal";
   return {
@@ -456,19 +442,6 @@ function spinFromRow(row: Record<string, unknown>): RouletteSpin {
     wonCoins: Number(row.won_coins) || 0,
     isNegative: !!row.is_negative,
     createdAt: normalizeDate(String(row.created_at ?? "")) ?? new Date().toISOString(),
-  };
-}
-
-function spinToRow(userId: string, s: RouletteSpin) {
-  return {
-    id: s.id,
-    user_id: userId,
-    bonus_id: s.bonusId,
-    label: s.label,
-    multiplier: Number(s.multiplier.toFixed(2)),
-    won_coins: Math.round(s.wonCoins),
-    is_negative: s.isNegative,
-    created_at: s.createdAt,
   };
 }
 
@@ -540,6 +513,14 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   const pendingSyncRef = useRef(false);
   const lastSyncedRef = useRef<string>("{}");
   const localSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Server-authoritative режим: пока колесо крутится (результат УЖЕ
+  // записан сервером), откладываем применение realtime-обновлений
+  // баланса, чтобы цифры на экране менялись только после остановки
+  // колеса (правило «пункт 3» из старой логики).
+  const moneyLockRef = useRef(false);
+  const pendingServerProfileRef = useRef<NodbetProfileRow | null>(null);
+  const settleAttemptsRef = useRef<Record<string, number>>({});
+  const reconcileCalledRef = useRef(false);
 
   // Всегда свежий снимок состояния — для отложенной синхронизации
   // и корректного flush при уходе со страницы.
@@ -600,45 +581,31 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       }
 
       if (!ownRes.data) {
-        const local = getInitialState(uid);
+        // Server-authoritative: профиль создаём МИНИМАЛЬНЫМ insert'ом —
+        // баланс/XP берутся из default'ов таблицы (10 000 NOD).
+        // Локальные (гостевые) накопления в онлайн-профиль НЕ импортируются:
+        // иначе это была бы дыра для накрутки баланса.
         const initialNickname = loadLocalNicknames()[uid] ?? null;
-        const profilePayload = {
-          user_id: uid,
-          balance: local.balance,
-          xp: local.xp,
-          last_daily_claim: local.lastDailyClaim,
-          radar_unlocked: local.inventory.radarUnlocked,
-          double_spin: local.inventory.doubleSpin,
-          double_spin_enabled: local.inventory.doubleSpinEnabled,
-          hall_frame: local.inventory.hallFrame,
-          custom_status_owned: local.inventory.customStatusOwned,
-          coin_magnet: local.inventory.coinMagnet,
-          crown_badge: local.inventory.crownBadge,
-          star_trail: local.inventory.starTrail,
-          title_scroll: local.inventory.titleScroll,
-          neon_signature: local.inventory.neonSignature,
-          aura_owned: local.inventory.auraOwned,
-          aura_color: local.inventory.auraColor,
-          aura_enabled: local.inventory.auraEnabled,
-          multi_bet: local.inventory.multiBet,
-          custom_status_text: local.inventory.customStatusText,
-          promo_used: local.inventory.promoUsed,
-          bet_reconcile_v1_done: !!local.inventory.betReconcileV1Done,
-          bets_count: local.bets.length + local.rouletteHistory.length,
-        };
-        let { error: createErr } = await supabase.from("nodbet_profiles").upsert({ ...profilePayload, nickname: initialNickname });
-        if (createErr && createErr.code === "23505") {
-          const retry = await supabase.from("nodbet_profiles").upsert(profilePayload);
+        let { error: createErr } = await supabase.from("nodbet_profiles").insert({ user_id: uid, nickname: initialNickname });
+        if (createErr && (createErr.code === "23505" || /duplicate|unique/i.test(createErr.message))) {
+          const retry = await supabase.from("nodbet_profiles").insert({ user_id: uid, nickname: null });
           createErr = retry.error;
         }
         if (createErr) {
           console.error("[NODBET] Не удалось создать профиль в Supabase", createErr);
           return;
         }
-        if (local.bets.length) await supabase.from("nodbet_bets").upsert(local.bets.map((b) => betToRow(uid, b)));
-        if (local.rouletteHistory.length) await supabase.from("nodbet_roulette_spins").upsert(local.rouletteHistory.map((s) => spinToRow(uid, s)));
-        lastSyncedRef.current = JSON.stringify(stateSnapshot(local));
-        setState(local);
+        const fresh: NodbetState = {
+          balance: STARTING_BALANCE,
+          xp: STARTING_XP,
+          lastDailyClaim: null,
+          inventory: emptyInventory(),
+          bets: [],
+          rouletteHistory: [],
+          streak: emptyStreak(),
+        };
+        lastSyncedRef.current = JSON.stringify(stateSnapshot(fresh));
+        setState(fresh);
         await loadProfiles();
         return;
       }
@@ -681,11 +648,78 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     [loadProfiles]
   );
 
+  // ---------- Server-authoritative: применение серверного профиля ----------
+  // Баланс/XP/инвентарь/дейли в онлайн-режиме приходят ТОЛЬКО с сервера
+  // (RPC и триггеры). Косметику (ник/ауру/статус) не трогаем — её
+  // по-прежнему пишет сам клиент в разрешённые колонки.
+  const applyServerProfileMoney = useCallback((p: NodbetProfileRow) => {
+    setState((prev) => ({
+      ...prev,
+      balance: Number(p.balance) || 0,
+      xp: Number(p.xp) || 0,
+      lastDailyClaim: normalizeDate(p.last_daily_claim),
+      inventory: {
+        ...prev.inventory,
+        radarUnlocked: !!p.radar_unlocked,
+        doubleSpin: !!p.double_spin,
+        doubleSpinEnabled: (p as NodbetProfileRow).double_spin_enabled !== false,
+        hallFrame: !!p.hall_frame,
+        customStatusOwned: !!p.custom_status_owned,
+        coinMagnet: !!p.coin_magnet,
+        crownBadge: !!p.crown_badge,
+        starTrail: !!p.star_trail,
+        titleScroll: !!p.title_scroll,
+        neonSignature: !!p.neon_signature,
+        auraOwned: !!p.aura_owned,
+        multiBet: !!p.multi_bet,
+        promoUsed: !!p.promo_used,
+        betReconcileV1Done: !!p.bet_reconcile_v1_done,
+      },
+    }));
+  }, []);
+
+  const applyServerProfileRow = useCallback(
+    (p: NodbetProfileRow) => {
+      if (moneyLockRef.current) {
+        // Колесо крутится — отложим применение до остановки анимации.
+        pendingServerProfileRef.current = p;
+        return;
+      }
+      applyServerProfileMoney(p);
+    },
+    [applyServerProfileMoney]
+  );
+
+  const unlockMoney = useCallback(() => {
+    moneyLockRef.current = false;
+    const pending = pendingServerProfileRef.current;
+    pendingServerProfileRef.current = null;
+    if (pending) applyServerProfileMoney(pending);
+  }, [applyServerProfileMoney]);
+
+  const refreshOwnProfile = useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase || !latestUserRef.current) return;
+    try {
+      const { data, error } = await supabase
+        .from("nodbet_profiles")
+        .select("*")
+        .eq("user_id", latestUserRef.current.id)
+        .maybeSingle();
+      if (!error && data) applyServerProfileRow(data as NodbetProfileRow);
+    } catch {
+      /* ignore */
+    }
+  }, [applyServerProfileRow]);
+
   useEffect(() => {
     hydratedRef.current = false;
     setHydrated(false);
     pendingSyncRef.current = false;
     lastSyncedRef.current = "{}";
+    settleAttemptsRef.current = {};
+    reconcileCalledRef.current = false;
+    moneyLockRef.current = false;
+    pendingServerProfileRef.current = null;
 
     if (isSupabaseConfigured && supabase) {
       loadProfiles();
@@ -728,10 +762,26 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       })
       .subscribe();
 
+    // Подписка на СВОЙ профиль: серверные начисления (выигрыш в
+    // Двойной-Рулетке, расчёт ставок и т.п.) прилетают сюда.
+    const selfChannel = user
+      ? client
+          .channel(`nodbet-own-profile-${user.id}`)
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "nodbet_profiles", filter: `user_id=eq.${user.id}` },
+            (payload) => {
+              applyServerProfileRow(payload.new as NodbetProfileRow);
+            }
+          )
+          .subscribe()
+      : null;
+
     return () => {
       client.removeChannel(channel);
+      if (selfChannel) client.removeChannel(selfChannel);
     };
-  }, [loadProfiles]);
+  }, [loadProfiles, user, applyServerProfileRow]);
 
   // ---------- Сохранение в localStorage ----------
   useEffect(() => {
@@ -767,51 +817,20 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       pendingSyncRef.current = true;
       try {
         const uid = currentUser.id;
-        const betsCount = snapshot.bets.length + snapshot.rouletteHistory.length;
 
-        let prevSync: ReturnType<typeof stateSnapshot> | null = null;
-        try {
-          prevSync = JSON.parse(lastSyncedRef.current);
-        } catch {
-          prevSync = null;
-        }
-
-        const { error: profileErr } = await client.from("nodbet_profiles").upsert({
-          user_id: uid,
-          balance: snapshot.balance,
-          xp: snapshot.xp,
-          last_daily_claim: snapshot.lastDailyClaim,
-          radar_unlocked: snapshot.inventory.radarUnlocked,
-          double_spin: snapshot.inventory.doubleSpin,
-          double_spin_enabled: snapshot.inventory.doubleSpinEnabled,
-          hall_frame: snapshot.inventory.hallFrame,
-          custom_status_owned: snapshot.inventory.customStatusOwned,
-          coin_magnet: snapshot.inventory.coinMagnet,
-          crown_badge: snapshot.inventory.crownBadge,
-          star_trail: snapshot.inventory.starTrail,
-          title_scroll: snapshot.inventory.titleScroll,
-          neon_signature: snapshot.inventory.neonSignature,
-          aura_owned: snapshot.inventory.auraOwned,
-          aura_color: snapshot.inventory.auraColor,
-          aura_enabled: snapshot.inventory.auraEnabled,
-          multi_bet: snapshot.inventory.multiBet,
-          custom_status_text: snapshot.inventory.customStatusText,
-          promo_used: snapshot.inventory.promoUsed,
-          bet_reconcile_v1_done: !!snapshot.inventory.betReconcileV1Done,
-          bets_count: betsCount,
-        });
+        // Server-authoritative: клиент пишет ТОЛЬКО косметические поля.
+        // Баланс/XP/историю ставок и спинов меняет исключительно сервер
+        // через RPC (RLS и GRANT'ы не позволят записать их напрямую).
+        const { error: profileErr } = await client
+          .from("nodbet_profiles")
+          .update({
+            custom_status_text: snapshot.inventory.customStatusText,
+            aura_color: snapshot.inventory.auraColor,
+            aura_enabled: snapshot.inventory.auraEnabled,
+            double_spin_enabled: snapshot.inventory.doubleSpinEnabled,
+          })
+          .eq("user_id", uid);
         if (profileErr) throw profileErr;
-
-        if (!prevSync || JSON.stringify(prevSync.bets) !== JSON.stringify(snapshot.bets)) {
-          const { error: betsErr } = await client.from("nodbet_bets").upsert(snapshot.bets.map((b) => betToRow(uid, b)));
-          if (betsErr) throw betsErr;
-        }
-        if (!prevSync || JSON.stringify(prevSync.rouletteHistory) !== JSON.stringify(snapshot.rouletteHistory)) {
-          const { error: spinsErr } = await client
-            .from("nodbet_roulette_spins")
-            .upsert(snapshot.rouletteHistory.map((s) => spinToRow(uid, s)));
-          if (spinsErr) throw spinsErr;
-        }
 
         lastSyncedRef.current = snapJson;
       } catch (e) {
@@ -864,10 +883,10 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   }, [user, syncToSupabase]);
 
   // ---------- Авто-расчёт ставок (по актуальным правилам CS2) ----------
-  // Зависит и от матчей, и от ставок — чтобы ставки, подгруженные из
-  // Supabase ПОЗЖЕ матчей, тоже корректно рассчитывались (фикс «матч
-  // завершён, а ставка висит pending»).
+  // ЛОКАЛЬНЫЙ расчёт — только для гостей/офлайн-режима.
+  // В онлайн-режиме исход считает сервер (RPC ниже).
   useEffect(() => {
+    if (isSupabaseConfigured && supabase && latestUserRef.current) return;
     setState((prev) => {
       let changed = false;
       let addedBalance = 0;
@@ -901,7 +920,80 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     });
   }, [matches, state.bets]);
 
+  // ---------- Авто-расчёт ставок (ОНЛАЙН-режим): сервер считает исход ----------
+  // Клиент вызывает RPC, когда по его pending-ставкам матч завершился.
+  // Сервер атомарно обновляет ставки/баланс/XP и возвращает их.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !user || !hydrated) return;
+    const pendingMatchIds = new Set(
+      state.bets.filter((b) => b.status === "pending").map((b) => b.matchId)
+    );
+    if (pendingMatchIds.size === 0) return;
+
+    for (const m of matches) {
+      if (m.status !== "finished" || !pendingMatchIds.has(m.id)) continue;
+      const lastTry = settleAttemptsRef.current[m.id] || 0;
+      if (Date.now() - lastTry < 10000) continue;
+      settleAttemptsRef.current[m.id] = Date.now();
+
+      void (async (matchId: string) => {
+        try {
+          const { data, error } = await supabase.rpc("nodbet_settle_my_bets", { p_match_id: matchId });
+          if (error || !data?.ok) return;
+          const changed = ((data as { bets?: { id: string; status: NodbetBet["status"]; payout: number }[] }).bets) || [];
+          setState((prev) => ({
+            ...prev,
+            balance: Number((data as { balance?: number }).balance ?? prev.balance),
+            xp: Number((data as { xp?: number }).xp ?? prev.xp),
+            bets: prev.bets.map((b) => {
+              const c = changed.find((x) => x.id === b.id);
+              return c ? { ...b, status: c.status, payout: Number(c.payout) || 0 } : b;
+            }),
+          }));
+        } catch {
+          /* следующая попытка через backoff */
+        }
+      })(m.id);
+    }
+  }, [matches, state.bets, user, hydrated]);
+
+  // ---------- РАЗОВЫЙ пересчёт ставок (ОНЛАЙН-режим, пункт 8) ----------
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !user || !hydrated) return;
+    if (reconcileCalledRef.current) return;
+    if (state.inventory.betReconcileV1Done) {
+      reconcileCalledRef.current = true;
+      return;
+    }
+    if (matches.length === 0) return; // ждём загрузки матчей (как раньше)
+
+    reconcileCalledRef.current = true;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc("nodbet_reconcile_my_bets");
+        if (error || !data?.ok) {
+          reconcileCalledRef.current = false;
+          return;
+        }
+        const changed = ((data as { changed?: { id: string; status: NodbetBet["status"]; payout: number }[] }).changed) || [];
+        setState((prev) => ({
+          ...prev,
+          balance: Number((data as { balance?: number }).balance ?? prev.balance),
+          xp: Number((data as { xp?: number }).xp ?? prev.xp),
+          bets: prev.bets.map((b) => {
+            const c = changed.find((x) => x.id === b.id);
+            return c ? { ...b, status: c.status, payout: Number(c.payout) || 0 } : b;
+          }),
+          inventory: { ...prev.inventory, betReconcileV1Done: true },
+        }));
+      } catch {
+        reconcileCalledRef.current = false;
+      }
+    })();
+  }, [user, hydrated, matches, state.inventory.betReconcileV1Done]);
+
   // ---------- РАЗОВЫЙ пересчёт ставок (пункт 8) ----------
+  // ЛОКАЛЬНЫЙ вариант — только для гостей/офлайна.
   // Один раз после этого апдейта: перепроверяем УЖЕ рассчитанные ставки
   // против актуальных результатов каток. Если из-за старого бага ставка
   // была ошибочно помечена проигранной (команда выиграла) — засчитываем
@@ -909,6 +1001,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   // проиграла) — исправляем на проигрыш и снимаем ошибочно начисленное.
   // Запускается только когда загружены и матчи, и ставки пользователя.
   useEffect(() => {
+    if (isSupabaseConfigured && supabase && latestUserRef.current) return;
     if (!hydrated) return;
     if (matches.length === 0) return; // ждём загрузки матчей
     if (state.inventory.betReconcileV1Done) return;
@@ -1005,31 +1098,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           if (updErr.code === "23505" || /duplicate|unique/i.test(updErr.message)) {
             return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
           }
-          // Попытка upsert как fallback
-          const { error: upsertErr } = await supabase.from("nodbet_profiles").upsert(
-            {
-              user_id: user.id,
-              nickname: clean,
-              balance: state.balance,
-              xp: state.xp,
-              radar_unlocked: state.inventory.radarUnlocked,
-              double_spin: state.inventory.doubleSpin,
-              double_spin_enabled: state.inventory.doubleSpinEnabled,
-              hall_frame: state.inventory.hallFrame,
-              custom_status_owned: state.inventory.customStatusOwned,
-              coin_magnet: state.inventory.coinMagnet,
-              crown_badge: state.inventory.crownBadge,
-              star_trail: state.inventory.starTrail,
-              title_scroll: state.inventory.titleScroll,
-              neon_signature: state.inventory.neonSignature,
-              aura_owned: state.inventory.auraOwned,
-              aura_color: state.inventory.auraColor,
-              aura_enabled: state.inventory.auraEnabled,
-              multi_bet: state.inventory.multiBet,
-              custom_status_text: state.inventory.customStatusText,
-            },
-            { onConflict: "user_id" }
-          );
+          // Попытка insert как fallback (минимальный — деньги задаёт сервер)
+          const { error: upsertErr } = await supabase.from("nodbet_profiles").insert({
+            user_id: user.id,
+            nickname: clean,
+          });
           if (upsertErr) {
             if (upsertErr.code === "23505" || /duplicate|unique/i.test(upsertErr.message)) {
               return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
@@ -1041,27 +1114,9 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           // Если update не затронул строк (профиля нет) — вставляем
           // supabase v2 не возвращает count без select, поэтому проверим myProfile
           if (!myProfile) {
-            const { error: insErr } = await supabase.from("nodbet_profiles").upsert({
+            const { error: insErr } = await supabase.from("nodbet_profiles").insert({
               user_id: user.id,
               nickname: clean,
-              balance: state.balance,
-              xp: state.xp,
-              radar_unlocked: state.inventory.radarUnlocked,
-              double_spin: state.inventory.doubleSpin,
-              double_spin_enabled: state.inventory.doubleSpinEnabled,
-              hall_frame: state.inventory.hallFrame,
-              custom_status_owned: state.inventory.customStatusOwned,
-              coin_magnet: state.inventory.coinMagnet,
-              crown_badge: state.inventory.crownBadge,
-              star_trail: state.inventory.starTrail,
-              title_scroll: state.inventory.titleScroll,
-              neon_signature: state.inventory.neonSignature,
-              aura_owned: state.inventory.auraOwned,
-              aura_color: state.inventory.auraColor,
-              aura_enabled: state.inventory.auraEnabled,
-              multi_bet: state.inventory.multiBet,
-              custom_status_text: state.inventory.customStatusText,
-              bets_count: 0,
             });
             if (insErr && insErr.code === "23505") {
               return { ok: false, error: "Этот никнейм уже занят другим игроком 😕" };
@@ -1151,8 +1206,27 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const claimDailyBonus = useCallback(() => {
+  const claimDailyBonus = useCallback(async (): Promise<{ ok: boolean; error?: string; reward?: number }> => {
     if (!dailyBonusAvailable) return { ok: false, error: "Вы уже забирали бонус сегодня. Приходите завтра!" };
+
+    // Server-authoritative: в онлайн-режиме начисление делает сервер.
+    if (isSupabaseConfigured && supabase && latestUserRef.current) {
+      try {
+        const { data, error } = await supabase.rpc("nodbet_claim_daily");
+        if (error) return { ok: false, error: "Ошибка сервера при начислении бонуса" };
+        if (!data?.ok) return { ok: false, error: (data as { error?: string })?.error || "Бонус пока недоступен" };
+        setState((prev) => ({
+          ...prev,
+          balance: Number((data as { balance?: number }).balance ?? prev.balance),
+          xp: Number((data as { xp?: number }).xp ?? prev.xp),
+          lastDailyClaim: normalizeDate((data as { last_daily_claim?: string }).last_daily_claim ?? null) ?? new Date().toISOString(),
+        }));
+        return { ok: true, reward: Number((data as { reward?: number }).reward) || 500 };
+      } catch {
+        return { ok: false, error: "Ошибка сети. Попробуйте ещё раз." };
+      }
+    }
+
     const reward = 500;
     setState((prev) => ({
       ...prev,
@@ -1173,6 +1247,23 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: "Этот промокод уже был активирован на вашем аккаунте!" };
       }
 
+      // Server-authoritative: начисление и флаг — на сервере.
+      if (isSupabaseConfigured && supabase && latestUserRef.current) {
+        try {
+          const { data, error } = await supabase.rpc("nodbet_activate_promo", { p_code: code });
+          if (error) return { ok: false, error: "Ошибка сервера при активации промокода" };
+          if (!data?.ok) return { ok: false, error: (data as { error?: string })?.error || "Ошибка активации промокода" };
+          setState((prev) => ({
+            ...prev,
+            balance: Number((data as { balance?: number }).balance ?? prev.balance),
+            inventory: { ...prev.inventory, promoUsed: true },
+          }));
+          return { ok: true };
+        } catch {
+          return { ok: false, error: "Ошибка сети. Попробуйте ещё раз." };
+        }
+      }
+
       setState((prev) => ({
         ...prev,
         balance: prev.balance + 10000,
@@ -1188,14 +1279,14 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   );
 
   const placeBet = useCallback(
-    (
+    async (
       matchId: string,
       mapIndex: number,
       teamChoice: string,
       teamName: string,
       amount: number,
       overtimePrediction: boolean
-    ) => {
+    ): Promise<{ ok: boolean; error?: string }> => {
       if (amount <= 0 || isNaN(amount)) return { ok: false, error: "Укажите корректную сумму ставки" };
       if (amount > state.balance) return { ok: false, error: "Недостаточно NOD-Коинов для такой ставки!" };
 
@@ -1214,6 +1305,46 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           ok: false,
           error: `Вы уже сделали ставку на Карту ${mapIndex + 1} этого матча. Дождитесь её расчёта.`,
         };
+      }
+
+      // Server-authoritative: ставку принимает и списывает коины сервер.
+      if (isSupabaseConfigured && supabase && latestUserRef.current) {
+        try {
+          const { data, error } = await supabase.rpc("nodbet_place_bet", {
+            p_match_id: matchId,
+            p_map_index: mapIndex,
+            p_team_choice: teamChoice,
+            p_amount: Math.round(amount),
+            p_overtime: overtimePrediction,
+          });
+          if (error) return { ok: false, error: "Ошибка сервера при приёме ставки" };
+          if (!data?.ok) return { ok: false, error: (data as { error?: string })?.error || "Не удалось принять ставку" };
+
+          const srvBet = (data as { bet?: Record<string, unknown> }).bet;
+          const newBet: NodbetBet = {
+            id: String(srvBet?.id ?? "bet_" + crypto.randomUUID().slice(0, 8)),
+            matchId,
+            matchTitle: String(srvBet?.match_title ?? match.title),
+            mapIndex,
+            teamChoice,
+            teamName: String(srvBet?.team_name ?? teamName),
+            amount,
+            odds: Number(srvBet?.odds) || 1,
+            overtimePrediction,
+            status: "pending",
+            createdAt: new Date().toISOString(),
+            payout: 0,
+          };
+          setState((prev) => ({
+            ...prev,
+            balance: Number((data as { balance?: number }).balance ?? prev.balance),
+            xp: Number((data as { xp?: number }).xp ?? prev.xp),
+            bets: [newBet, ...prev.bets],
+          }));
+          return { ok: true };
+        } catch {
+          return { ok: false, error: "Ошибка сети. Попробуйте ещё раз." };
+        }
       }
 
       const baseA = Math.round((1.75 + (match.match_number % 3) * 0.13 + mapIndex * 0.05 + 0.25) * 100) / 100;
@@ -1252,7 +1383,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   // На LIVE и завершённые матчи отменять нельзя. При отмене ставка
   // возвращается на баланс.
   const cancelBet = useCallback(
-    (betId: string) => {
+    async (betId: string): Promise<{ ok: boolean; error?: string; refund?: number }> => {
       const bet = state.bets.find((b) => b.id === betId);
       if (!bet) return { ok: false, error: "Ставка не найдена" };
       if (bet.status !== "pending") {
@@ -1265,6 +1396,24 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           ok: false,
           error: "Отменять можно только ставки на будущие матчи. Этот матч уже идёт или завершён.",
         };
+      }
+
+      // Server-authoritative: возврат делает сервер.
+      if (isSupabaseConfigured && supabase && latestUserRef.current) {
+        try {
+          const { data, error } = await supabase.rpc("nodbet_cancel_bet", { p_bet_id: betId });
+          if (error) return { ok: false, error: "Ошибка сервера при отмене ставки" };
+          if (!data?.ok) return { ok: false, error: (data as { error?: string })?.error || "Не удалось отменить ставку" };
+          const refund = Number((data as { refund?: number }).refund ?? bet.amount);
+          setState((prev) => ({
+            ...prev,
+            balance: Number((data as { balance?: number }).balance ?? prev.balance),
+            bets: prev.bets.map((b) => (b.id === betId ? { ...b, status: "cancelled" as const, payout: 0 } : b)),
+          }));
+          return { ok: true, refund };
+        } catch {
+          return { ok: false, error: "Ошибка сети. Попробуйте ещё раз." };
+        }
       }
 
       setState((prev) => ({
@@ -1283,7 +1432,10 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   // рассчитываются. Применение к балансу/XP/истории — только в commitSpin,
   // который вызывается ПОСЛЕ окончания анимации колеса.
   const spinRoulette = useCallback(
-    (betAmount: number, mode: RouletteMode = "classic") => {
+    async (
+      betAmount: number,
+      mode: RouletteMode = "classic"
+    ): Promise<{ ok: boolean; results: RouletteSpin[]; error?: string; balance?: number; xp?: number }> => {
       if (betAmount < 0 || isNaN(betAmount)) {
         return { ok: false, results: [] as RouletteSpin[], error: "Неверная сумма ставки" };
       }
@@ -1291,6 +1443,58 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         return { ok: false, results: [] as RouletteSpin[], error: "Недостаточно NOD-Коинов для этого спина!" };
       }
 
+      // Server-authoritative: исход спина определяет и записывает сервер.
+      if (isSupabaseConfigured && supabase && latestUserRef.current) {
+        moneyLockRef.current = true;
+        try {
+          const { data, error } = await supabase.rpc("nodbet_spin", {
+            p_bet_amount: Math.round(betAmount),
+            p_mode: mode,
+          });
+          if (error) {
+            unlockMoney();
+            return { ok: false, results: [] as RouletteSpin[], error: "Ошибка сервера при вращении. Попробуйте ещё раз." };
+          }
+          if (!data?.ok) {
+            unlockMoney();
+            return { ok: false, results: [] as RouletteSpin[], error: (data as { error?: string })?.error || "Ошибка вращения" };
+          }
+
+          const rawResults = ((data as { results?: Record<string, unknown>[] }).results) || [];
+          const results: RouletteSpin[] = rawResults.map((r) => {
+            const bonusId = (r.bonus_id as BonusId) || "normal";
+            const def = BONUSES[bonusId] || BONUSES.normal;
+            return {
+              id: String(r.id),
+              bonusId,
+              label: String(r.label ?? def.label),
+              multiplier: Number(r.multiplier) || def.multiplier,
+              wonCoins: Number(r.won_coins) || 0,
+              isNegative: !!r.is_negative,
+              createdAt: normalizeDate(String(r.created_at ?? "")) ?? new Date().toISOString(),
+            };
+          });
+
+          const serverBalance = Number((data as { balance?: number }).balance);
+          const serverXp = Number((data as { xp?: number }).xp);
+          if (!Number.isFinite(serverBalance) || !Number.isFinite(serverXp)) {
+            unlockMoney();
+            return { ok: false, results: [] as RouletteSpin[], error: "Некорректный ответ сервера. Попробуйте ещё раз." };
+          }
+
+          return {
+            ok: true,
+            results,
+            balance: serverBalance,
+            xp: serverXp,
+          };
+        } catch {
+          unlockMoney();
+          return { ok: false, results: [] as RouletteSpin[], error: "Ошибка сети. Попробуйте ещё раз." };
+        }
+      }
+
+      // Локальный (гостевой/офлайн) режим — как раньше.
       const results: RouletteSpin[] = [];
       let workingStreak = state.streak;
 
@@ -1324,33 +1528,40 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
       return { ok: true, results };
     },
-    [state.balance, state.streak, state.inventory.doubleSpin, state.inventory.doubleSpinEnabled]
+    [state.balance, state.streak, state.inventory.doubleSpin, state.inventory.doubleSpinEnabled, unlockMoney]
   );
 
   const commitSpin = useCallback(
-    (results: RouletteSpin[]) => {
-      if (!results.length) return;
-      let balanceDelta = 0;
-      let xpGain = 0;
-      let workingStreak = state.streak;
+    (results: RouletteSpin[], serverTotals?: { balance: number; xp: number }) => {
+      try {
+        if (!results.length) return;
+        let balanceDelta = 0;
+        let xpGain = 0;
+        let workingStreak = state.streak;
 
-      for (const r of results) {
-        balanceDelta += r.wonCoins;
-        xpGain += r.isNegative ? 20 : 60;
-        workingStreak = updateStreak(workingStreak, r.bonusId);
+        for (const r of results) {
+          balanceDelta += r.wonCoins;
+          xpGain += r.isNegative ? 20 : 60;
+          workingStreak = updateStreak(workingStreak, r.bonusId);
+        }
+
+        const magnet = state.inventory.coinMagnet ? 1.1 : 1;
+
+        setState((prev) => ({
+          ...prev,
+          // В онлайн-режиме применяем ТОЧНЫЕ серверные значения (сервер
+          // уже записал их), иначе — локальный расчёт, как раньше.
+          balance: serverTotals ? Math.max(0, serverTotals.balance) : Math.max(0, prev.balance + balanceDelta),
+          xp: serverTotals ? Math.max(0, serverTotals.xp) : prev.xp + Math.round(xpGain * magnet),
+          streak: workingStreak,
+          rouletteHistory: [...results, ...prev.rouletteHistory].slice(0, 30),
+        }));
+      } finally {
+        // Колесо остановилось — снимаем блокировку realtime-применений.
+        unlockMoney();
       }
-
-      const magnet = state.inventory.coinMagnet ? 1.1 : 1;
-
-      setState((prev) => ({
-        ...prev,
-        balance: Math.max(0, prev.balance + balanceDelta),
-        xp: prev.xp + Math.round(xpGain * magnet),
-        streak: workingStreak,
-        rouletteHistory: [...results, ...prev.rouletteHistory].slice(0, 30),
-      }));
     },
-    [state.streak, state.inventory.coinMagnet]
+    [state.streak, state.inventory.coinMagnet, unlockMoney]
   );
 
   // ---------- Двойная Рулетка: списание и начисление ----------
@@ -1383,9 +1594,38 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     [state.inventory.coinMagnet]
   );
 
+  // Ставка в Двойной-Рулетке: в онлайн-режиме списание выполняет сервер
+  // (RPC nodbet_double_place_bet), который также фиксирует пик и готовность.
+  // В локальном режиме — старое локальное списание.
+  const doubleRoulettePlaceBet = useCallback(
+    async (lobbyId: string, amount: number, bonusId: string): Promise<{ ok: boolean; error?: string }> => {
+      if (isSupabaseConfigured && supabase && latestUserRef.current) {
+        try {
+          const { data, error } = await supabase.rpc("nodbet_double_place_bet", {
+            p_lobby_id: lobbyId,
+            p_bet_amount: Math.round(amount),
+            p_selected_bonus_id: bonusId,
+          });
+          if (error) return { ok: false, error: "Ошибка сервера при фиксации ставки" };
+          if (!data?.ok) return { ok: false, error: (data as { error?: string })?.error || "Ошибка списания ставки" };
+          setState((prev) => ({
+            ...prev,
+            balance: Number((data as { balance?: number }).balance ?? prev.balance),
+            xp: Number((data as { xp?: number }).xp ?? prev.xp),
+          }));
+          return { ok: true };
+        } catch {
+          return { ok: false, error: "Ошибка сети. Попробуйте ещё раз." };
+        }
+      }
+      return doubleRouletteDeduct(amount);
+    },
+    [doubleRouletteDeduct]
+  );
+
   // ---------- Магазин ----------
   const buyPerk = useCallback(
-    (perkId: NodbetPerkId) => {
+    async (perkId: NodbetPerkId): Promise<{ ok: boolean; error?: string }> => {
       const perk = NODBET_PERKS.find((p) => p.id === perkId);
       if (!perk) return { ok: false, error: "Привилегия не найдена" };
       if (state.balance < perk.cost) {
@@ -1405,6 +1645,38 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         (perkId === "aura" && state.inventory.auraOwned) ||
         (perkId === "multi_bet" && state.inventory.multiBet);
       if (owned) return { ok: false, error: "Эта привилегия у вас уже есть!" };
+
+      // Server-authoritative: покупку и списание проводит сервер.
+      if (isSupabaseConfigured && supabase && latestUserRef.current) {
+        try {
+          const { data, error } = await supabase.rpc("nodbet_buy_perk", { p_perk_id: perkId });
+          if (error) return { ok: false, error: "Ошибка сервера при покупке" };
+          if (!data?.ok) return { ok: false, error: (data as { error?: string })?.error || "Ошибка покупки" };
+          setState((prev) => ({
+            ...prev,
+            balance: Number((data as { balance?: number }).balance ?? prev.balance),
+            xp: Number((data as { xp?: number }).xp ?? prev.xp),
+            inventory: {
+              ...prev.inventory,
+              radarUnlocked: perkId === "radar" ? true : prev.inventory.radarUnlocked,
+              doubleSpin: perkId === "double_spin" ? true : prev.inventory.doubleSpin,
+              doubleSpinEnabled: perkId === "double_spin" ? true : prev.inventory.doubleSpinEnabled,
+              hallFrame: perkId === "hall_frame" ? true : prev.inventory.hallFrame,
+              crownBadge: perkId === "crown_badge" ? true : prev.inventory.crownBadge,
+              customStatusOwned: perkId === "custom_status" ? true : prev.inventory.customStatusOwned,
+              coinMagnet: perkId === "coin_magnet" ? true : prev.inventory.coinMagnet,
+              starTrail: perkId === "star_trail" ? true : prev.inventory.starTrail,
+              titleScroll: perkId === "title_scroll" ? true : prev.inventory.titleScroll,
+              neonSignature: perkId === "neon_signature" ? true : prev.inventory.neonSignature,
+              auraOwned: perkId === "aura" ? true : prev.inventory.auraOwned,
+              multiBet: perkId === "multi_bet" ? true : prev.inventory.multiBet,
+            },
+          }));
+          return { ok: true };
+        } catch {
+          return { ok: false, error: "Ошибка сети. Попробуйте ещё раз." };
+        }
+      }
 
       setState((prev) => ({
         ...prev,
@@ -1550,6 +1822,8 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       maxCustomBet,
       doubleRouletteDeduct,
       doubleRoulettePayout,
+      doubleRoulettePlaceBet,
+      refreshOwnProfile,
     }),
     [
       state.balance,
@@ -1580,6 +1854,8 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       maxCustomBet,
       doubleRouletteDeduct,
       doubleRoulettePayout,
+      doubleRoulettePlaceBet,
+      refreshOwnProfile,
     ]
   );
 

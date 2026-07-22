@@ -19,6 +19,7 @@ import {
   Ban,
 } from "lucide-react";
 import { useNodbet } from "../context/NodbetContext";
+import { useUserAuth } from "../context/UserAuthContext";
 import {
   DOUBLE_BONUSES,
   DOUBLE_BONUS_ORDER,
@@ -30,12 +31,14 @@ import {
   type DoublePlayerInput,
   type DoublePlayerResult,
 } from "../utils/doubleRoulette";
+import { pickLandingRemainderDeg } from "../utils/roulette";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 export interface DBRowLobby {
   id: string;
   host_id: string;
   host_nickname: string;
+  host_auth_id?: string | null;
   name: string;
   max_players: number;
   min_bet: number;
@@ -49,6 +52,7 @@ export interface DBRowPlayer {
   id: string;
   lobby_id: string;
   user_id: string;
+  auth_user_id?: string | null;
   nickname: string;
   bet_amount: number;
   selected_bonus_id: DoubleBonusId | null;
@@ -63,12 +67,18 @@ export default function DoubleRouletteView() {
     balance,
     displayNickname,
     nickname,
-    doubleRouletteDeduct,
     doubleRoulettePayout,
+    doubleRoulettePlaceBet,
+    refreshOwnProfile,
   } = useNodbet();
+  const { user } = useUserAuth();
   const currentUserId = useMemo(() => {
     return nickname || displayNickname;
   }, [nickname, displayNickname]);
+
+  // В онлайн-режиме деньги перемещает ТОЛЬКО сервер (RPC). Для этого
+  // нужен аккаунт: гости могут смотреть лобби, но не играть.
+  const isOnlinePlay = isSupabaseConfigured && !!user;
 
   // Lobbies & current active lobby
   const [lobbies, setLobbies] = useState<DBRowLobby[]>([]);
@@ -307,6 +317,29 @@ export default function DoubleRouletteView() {
     }
   }, [activeLobby?.status, lobbyPlayers, currentUserId, hasConfirmedPick]);
 
+  // Сброс локальных флагов при НАЧАЛЕ нового раунда (переход в 'betting').
+  // Раньше эти флаги сбрасывались только у хоста — у остальных игроков
+  // confirm «залипал» с прошлого раунда (новая ставка не принималась),
+  // а spinAppliedRef не давал запуститься анимации повторных спинов.
+  const prevLobbyStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const st = activeLobby?.status ?? null;
+    if (st === "betting" && prevLobbyStatusRef.current !== "betting") {
+      spinAppliedRef.current = false;
+      setPayoutApplied(false);
+      setFinalResults(null);
+      // Если моя прошлая фиксация уже устарела (сервер очистил пики),
+      // сбрасываем и confirm-состояние — иначе авто-выбор не сработает.
+      const myPlayer = lobbyPlayers.find((p) => p.user_id === currentUserId);
+      if (myPlayer && !myPlayer.is_ready) {
+        setHasConfirmedPick(false);
+        setBetDeducted(false);
+      }
+    }
+    prevLobbyStatusRef.current = st;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLobby?.status]);
+
   // Poll lobbies and active lobby
   useEffect(() => {
     fetchLobbies();
@@ -353,12 +386,18 @@ export default function DoubleRouletteView() {
     }
 
     if (isSupabaseConfigured && supabase) {
+      if (!user) {
+        setErrorToast("Войдите в аккаунт, чтобы создавать лобби и играть онлайн!");
+        setTimeout(() => setErrorToast(null), 3500);
+        return;
+      }
       try {
         const { data: newLobby, error: lErr } = await supabase
           .from("nodbet_double_lobbies")
           .insert({
             host_id: currentUserId,
             host_nickname: displayNickname,
+            host_auth_id: user.id,
             name: lobbyTitle,
             max_players: createMaxPlayers,
             min_bet: createMinBet,
@@ -377,6 +416,7 @@ export default function DoubleRouletteView() {
         await supabase.from("nodbet_double_lobby_players").insert({
           lobby_id: newLobby.id,
           user_id: currentUserId,
+          auth_user_id: user.id,
           nickname: displayNickname,
           bet_amount: createMinBet,
           is_ready: false,
@@ -446,6 +486,11 @@ export default function DoubleRouletteView() {
     }
 
     if (isSupabaseConfigured && supabase) {
+      if (!user) {
+        setErrorToast("Войдите в аккаунт, чтобы присоединиться к лобби и играть онлайн!");
+        setTimeout(() => setErrorToast(null), 3500);
+        return;
+      }
       try {
         // Check current player count
         const { data: currentPlys } = await supabase
@@ -464,6 +509,7 @@ export default function DoubleRouletteView() {
           await supabase.from("nodbet_double_lobby_players").insert({
             lobby_id: lobby.id,
             user_id: currentUserId,
+            auth_user_id: user.id,
             nickname: displayNickname,
             bet_amount: lobby.min_bet,
             is_ready: false,
@@ -634,10 +680,11 @@ export default function DoubleRouletteView() {
     const randomBonus = mySelectedBonusRef.current || pickRandomDoubleBonus();
     const betAmt = effectiveBetAmountRef.current;
 
-    // Deduct bet from balance
-    const { ok } = doubleRouletteDeduct(betAmt);
+    // Deduct bet from balance (в онлайн-режиме — атомарно на сервере)
+    const { ok, error } = await doubleRoulettePlaceBet(activeLobbyId, betAmt, randomBonus);
     if (!ok) {
-      setErrorToast("Авто-выбор: недостаточно средств для ставки!");
+      // Если приём ставок уже завершён спином — деньги остаются у игрока.
+      setErrorToast(error ? `Авто-выбор: ${error}` : "Авто-выбор: недостаточно средств для ставки!");
       setTimeout(() => setErrorToast(null), 3000);
       return;
     }
@@ -648,15 +695,8 @@ export default function DoubleRouletteView() {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase
-          .from("nodbet_double_lobby_players")
-          .update({
-            bet_amount: betAmt,
-            selected_bonus_id: randomBonus,
-            is_ready: true,
-          })
-          .eq("lobby_id", activeLobbyId)
-          .eq("user_id", currentUserId);
+        // Сервер уже обновил строку игрока в RPC — просто подтянем данные.
+        fetchActiveLobbyDetails(activeLobbyId);
       } catch {
         /* ignore */
       }
@@ -689,24 +729,15 @@ export default function DoubleRouletteView() {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        // Reset player picks and set everyone to not ready for the betting/choosing phase
-        await supabase
-          .from("nodbet_double_lobby_players")
-          .update({
-            selected_bonus_id: null,
-            is_ready: false,
-            bet_amount: activeLobby.min_bet,
-          })
-          .eq("lobby_id", activeLobby.id);
-
-        await supabase
-          .from("nodbet_double_lobbies")
-          .update({
-            status: "betting",
-            timer_ends_at: timerEndsAt,
-            winning_bonus_id: null,
-          })
-          .eq("id", activeLobby.id);
+        // Сброс пиков игроков + перевод лобби в фазу ставок — атомарно на сервере
+        const { data, error } = await supabase.rpc("nodbet_double_round_control", {
+          p_lobby_id: activeLobby.id,
+          p_action: "start",
+        });
+        if (error || !data?.ok) {
+          setErrorToast((data as { error?: string })?.error || "Ошибка запуска раунда");
+          setTimeout(() => setErrorToast(null), 3000);
+        }
       } catch (err) {
         setErrorToast("Ошибка запуска раунда");
         setTimeout(() => setErrorToast(null), 3000);
@@ -779,9 +810,10 @@ export default function DoubleRouletteView() {
       return;
     }
 
-    // DEDUCT BET FROM BALANCE
+    // DEDUCT BET FROM BALANCE (в онлайн-режиме списание + фиксацию пика
+    // атомарно выполняет сервер через RPC)
     if (!betDeducted) {
-      const { ok, error } = doubleRouletteDeduct(myBetAmount);
+      const { ok, error } = await doubleRoulettePlaceBet(activeLobbyId, myBetAmount, mySelectedBonus);
       if (!ok) {
         setErrorToast(error || "Ошибка списания ставки");
         setTimeout(() => setErrorToast(null), 3000);
@@ -794,15 +826,9 @@ export default function DoubleRouletteView() {
     playSound("tick");
 
     if (isSupabaseConfigured && supabase) {
-      await supabase
-        .from("nodbet_double_lobby_players")
-        .update({
-          bet_amount: myBetAmount,
-          selected_bonus_id: mySelectedBonus,
-          is_ready: true,
-        })
-        .eq("lobby_id", activeLobbyId)
-        .eq("user_id", currentUserId);
+      // Сервер уже записал bet_amount/selected_bonus_id/is_ready в RPC —
+      // просто подтягиваем актуальные данные лобби.
+      fetchActiveLobbyDetails(activeLobbyId);
     } else {
       setLobbyPlayers((prev) =>
         prev.map((p) =>
@@ -823,17 +849,16 @@ export default function DoubleRouletteView() {
   const triggerWheelSpin = async () => {
     if (!activeLobbyId) return;
 
-    const winningBonus = pickRandomDoubleBonus();
-
     if (isSupabaseConfigured && supabase) {
-      await supabase
-        .from("nodbet_double_lobbies")
-        .update({
-          status: "spinning",
-          winning_bonus_id: winningBonus,
-        })
-        .eq("id", activeLobbyId);
+      // Победный сектор выбирает и применяет выплаты СЕРВЕР.
+      // Функция идемпотентна: если раунд уже розыгран — просто вернёт сектор.
+      try {
+        await supabase.rpc("nodbet_double_spin", { p_lobby_id: activeLobbyId });
+      } catch {
+        /* realtime/polling подхватит статус */
+      }
     } else {
+      const winningBonus = pickRandomDoubleBonus();
       setActiveLobby((prev) => (prev ? { ...prev, status: "spinning", winning_bonus_id: winningBonus } : null));
     }
   };
@@ -855,7 +880,10 @@ export default function DoubleRouletteView() {
 
     const winningId = activeLobby.winning_bonus_id;
     const sector = wheelSectors.find((s) => s.id === winningId);
-    const targetRem = sector ? (360 - sector.midDeg) % 360 : 0;
+    // Стрелка останавливается в СЛУЧАЙНОЙ точке внутри победного сектора
+    // (как настоящее колесо фортуны), а не всегда ровно по центру.
+    // Сектор уже выбран сервером — стрелка всегда совпадает с выплатой.
+    const targetRem = sector ? pickLandingRemainderDeg(sector) : 0;
     const currentRem = wheelRotation % 360;
     let diff = targetRem - currentRem;
     if (diff <= 0) diff += 360;
@@ -890,17 +918,24 @@ export default function DoubleRouletteView() {
       const res = computeDoubleRouletteResults(formattedInputs, winningId);
       setFinalResults(res);
 
-      // APPLY PAYOUT TO BALANCE for current user
+      // APPLY PAYOUT TO BALANCE for current user.
+      // Онлайн-режим: сервер уже начислил выплаты ВСЕМ игрокам в RPC
+      // nodbet_double_spin — просто подтягиваем свой актуальный баланс/XP.
+      // Локальный режим: начисляем локально, как раньше.
       if (!payoutApplied) {
         const myRes = res.results.find((r) => r.userId === currentUserId);
         if (myRes) {
-          if (myRes.netGain > 0) {
+          if (isOnlinePlay) {
+            await refreshOwnProfile();
+          } else if (myRes.netGain > 0) {
             doubleRoulettePayout(myRes.payout, Math.round(myRes.payout / 20));
           } else if (myRes.netGain < 0) {
             // If net is negative but payout is 0, the bet was already deducted
             // No additional deduction needed
           }
           setPayoutApplied(true);
+        } else if (isOnlinePlay) {
+          await refreshOwnProfile();
         }
       }
 
@@ -912,12 +947,17 @@ export default function DoubleRouletteView() {
         playSound("lose");
       }
 
-      // SET LOBBY TO "finished" so everyone knows the spin is done
+      // SET LOBBY TO "finished" so everyone knows the spin is done.
+      // Онлайн: через RPC (может вызвать хост или любой участник лобби).
       if (isSupabaseConfigured && supabase && activeLobbyId) {
-        await supabase
-          .from("nodbet_double_lobbies")
-          .update({ status: "finished" })
-          .eq("id", activeLobbyId);
+        try {
+          await supabase.rpc("nodbet_double_round_control", {
+            p_lobby_id: activeLobbyId,
+            p_action: "finish",
+          });
+        } catch {
+          /* статус подтянется позже */
+        }
       } else if (activeLobby) {
         setActiveLobby((prev) => (prev ? { ...prev, status: "finished" } : null));
       }
@@ -940,25 +980,15 @@ export default function DoubleRouletteView() {
     spinAppliedRef.current = false;
 
     if (isSupabaseConfigured && supabase) {
-      // Clear player picks
-      await supabase
-        .from("nodbet_double_lobby_players")
-        .update({
-          selected_bonus_id: null,
-          is_ready: false,
-          bet_amount: activeLobby.min_bet,
-        })
-        .eq("lobby_id", activeLobby.id);
-
-      // Reset lobby status to waiting
-      await supabase
-        .from("nodbet_double_lobbies")
-        .update({
-          status: "waiting",
-          winning_bonus_id: null,
-          timer_ends_at: null,
-        })
-        .eq("id", activeLobby.id);
+      // Сброс пиков игроков + статус 'waiting' — атомарно на сервере
+      try {
+        await supabase.rpc("nodbet_double_round_control", {
+          p_lobby_id: activeLobby.id,
+          p_action: "reset",
+        });
+      } catch {
+        /* ignore */
+      }
     } else {
       setLobbyPlayers((prev) =>
         prev.map((p) => ({ ...p, selected_bonus_id: null, is_ready: false, bet_amount: activeLobby.min_bet }))

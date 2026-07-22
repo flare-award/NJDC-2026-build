@@ -18,12 +18,14 @@ import {
 import { useNodbet, NODBET_PERKS, AURA_COLORS, type NodbetPerkId, type RouletteSpin } from "../context/NodbetContext";
 import { useData } from "../context/DataContext";
 import DoubleRouletteView from "../components/DoubleRouletteView";
+import NodbetChat from "../components/NodbetChat";
 import {
   BONUSES,
   ROULETTE_PRESETS,
   activeSectors,
   buildWheelSectors,
   wheelGradient,
+  pickLandingRemainderDeg,
   type RouletteMode,
 } from "../utils/roulette";
 import { maxMapCount } from "../utils/matchMaps";
@@ -170,8 +172,8 @@ export default function NodbetPage() {
     }
   }, [highRollers, leaderboardCategory]);
 
-  const handleDailyBonus = () => {
-    const { ok, error, reward } = claimDailyBonus();
+  const handleDailyBonus = async () => {
+    const { ok, error, reward } = await claimDailyBonus();
     if (!ok) {
       setBetErrorToast(error || "Бонус пока недоступен");
       setTimeout(() => setBetErrorToast(null), 3000);
@@ -197,7 +199,10 @@ export default function NodbetPage() {
   };
 
   // Вращение рулетки с синхронизированной остановкой и отложенным балансом (пункты 2, 3, 8)
-  const handleSpinWheel = () => {
+  // Обновление: исход определяет СЕРВЕР (RPC) до начала анимации, а колесо
+  // останавливается в СЛУЧАЙНОЙ точке внутри выпавшего сектора — как
+  // настоящее колесо фортуны, а не всегда ровно по центру.
+  const handleSpinWheel = async () => {
     if (isSpinning) return;
     const amount = effectiveSpinAmount;
     if (spinMode === "all" && balance <= 0) {
@@ -215,8 +220,9 @@ export default function NodbetPage() {
     setShowSpinWinModal(false);
     setLastSpinResults(null);
 
-    // Генерируем результаты спина без изменения баланса до окончания анимации (пункт 3)
-    const { ok, results, error } = spinRoulette(amount, rouletteMode);
+    // Запрашиваем результат (в онлайн-режиме его уже записал сервер),
+    // баланс на экране не меняется до окончания анимации (пункт 3)
+    const { ok, results, error, balance: serverBalance, xp: serverXp } = await spinRoulette(amount, rouletteMode);
     if (!ok || !results.length) {
       setIsSpinning(false);
       setBetErrorToast(error || "Ошибка вращения");
@@ -224,11 +230,12 @@ export default function NodbetPage() {
       return;
     }
 
-    // Колесо останавливается на секторе ПЕРВОГО результата (синхронизация, пункт 2).
+    // Колесо останавливается на секторе ПЕРВОГО результата (синхронизация, пункт 2),
+    // но стрелка указывает в случайное место ВНУТРИ сектора — остановленный
+    // сектор под стрелкой всегда совпадает с реально выпавшим бонусом.
     const first = results[0];
     const sector = wheelSectors.find((s) => s.id === first.bonusId);
-    // Находим точный угол, чтобы середина сектора (midDeg) после поворота стала 0deg сверху под стрелкой.
-    const targetRem = sector ? (360 - sector.midDeg) % 360 : 0;
+    const targetRem = sector ? pickLandingRemainderDeg(sector) : 0;
     const currentRem = spinRotation % 360;
     let diff = targetRem - currentRem;
     if (diff <= 0) diff += 360;
@@ -241,7 +248,7 @@ export default function NodbetPage() {
     setTimeout(() => {
       clearInterval(tickInterval);
       // Вот ТОГДА и только тогда пополняется баланс, начисляется XP и обновляется история! (пункт 3)
-      commitSpin(results);
+      commitSpin(results, serverBalance !== undefined ? { balance: serverBalance, xp: serverXp ?? 0 } : undefined);
       setIsSpinning(false);
       setLastSpinResults(results);
       setShowSpinWinModal(true);
@@ -264,14 +271,14 @@ export default function NodbetPage() {
     playSound("tick");
   };
 
-  const handlePlaceBetSubmit = () => {
+  const handlePlaceBetSubmit = async () => {
     if (!selectedMatchId || !selectedTeamId) return;
     if (overtimePick === null) {
       setBetErrorToast("Сделайте прогноз: будет ли овертайм на этой карте? Это обязательная часть ставки.");
       setTimeout(() => setBetErrorToast(null), 4000);
       return;
     }
-    const { ok, error } = placeBet(selectedMatchId, selectedMapIndex, selectedTeamId, selectedTeamName, betAmountInput, overtimePick);
+    const { ok, error } = await placeBet(selectedMatchId, selectedMapIndex, selectedTeamId, selectedTeamName, betAmountInput, overtimePick);
     if (!ok) {
       setBetErrorToast(error || "Не удалось принять ставку");
       setTimeout(() => setBetErrorToast(null), 3500);
@@ -285,8 +292,8 @@ export default function NodbetPage() {
     setOvertimePick(null);
   };
 
-  const handleCancelBet = (betId: string) => {
-    const { ok, error, refund } = cancelBet(betId);
+  const handleCancelBet = async (betId: string) => {
+    const { ok, error, refund } = await cancelBet(betId);
     if (!ok) {
       setBetErrorToast(error || "Не удалось отменить ставку");
       setTimeout(() => setBetErrorToast(null), 3500);
@@ -297,8 +304,8 @@ export default function NodbetPage() {
     setTimeout(() => setBetSuccessToast(null), 4000);
   };
 
-  const handleBuyPerk = (perkId: NodbetPerkId) => {
-    const { ok, error } = buyPerk(perkId);
+  const handleBuyPerk = async (perkId: NodbetPerkId) => {
+    const { ok, error } = await buyPerk(perkId);
     if (!ok) {
       setBetErrorToast(error || "Ошибка покупки");
       setTimeout(() => setBetErrorToast(null), 3500);
@@ -362,7 +369,7 @@ export default function NodbetPage() {
                     onClick={handleDailyBonus}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-black transition-all hover:scale-105 hover:shadow-lg hover:shadow-yellow-500/30 active:scale-95 cursor-pointer"
                   >
-                    <Gift size={16} /> +2,500 Ежедневный Бонус
+                    <Gift size={16} /> +500 Ежедневный Бонус
                   </button>
                 )}
               </div>
@@ -552,8 +559,13 @@ export default function NodbetPage() {
         {/* ======================= TAB 1: ROULETTE (classic + allornothing) ======================= */}
         {(activeTab === "roulette" || activeTab === "allornothing") && (
           <div className="grid gap-10 lg:grid-cols-12 items-start">
+            {/* CHAT — мини-окошко слева от колеса (на узких экранах — под ним) */}
+            <div className="order-3 lg:order-3 lg:col-span-12 xl:order-1 xl:col-span-3">
+              <NodbetChat />
+            </div>
+
             {/* WHEEL CONTROLLER */}
-            <div className="lg:col-span-7 rounded-3xl border border-red-500/20 bg-[#141414] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
+            <div className="order-1 lg:order-1 lg:col-span-7 xl:order-2 xl:col-span-5 rounded-3xl border border-red-500/20 bg-[#141414] p-6 sm:p-8 relative overflow-hidden shadow-2xl">
               <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-red-600 via-yellow-400 to-red-600" />
 
               <div className="text-center">
@@ -762,7 +774,7 @@ export default function NodbetPage() {
             </div>
 
             {/* PAYTABLE & ODDS INFO */}
-            <div className="lg:col-span-5 space-y-6">
+            <div className="order-2 lg:order-2 lg:col-span-5 xl:order-3 xl:col-span-4 space-y-6">
               <div className="rounded-3xl border border-white/10 bg-[#141414] p-6">
                 <div className="flex items-center gap-2 text-yellow-400 mb-4">
                   <HelpCircle size={20} />

@@ -303,3 +303,21 @@ export function wheelGradient(sectors: WheelSector[]): string {
   const parts = sectors.map((s) => `${s.def.color} ${s.startDeg}deg ${s.endDeg}deg`);
   return `conic-gradient(${parts.join(", ")})`;
 }
+
+/**
+ * Как в настоящих колесах фортуны: стрелка останавливается НЕ ровно по
+ * центру сектора, а в СЛУЧАЙНОЙ точке внутри него (с небольшим отступом
+ * от границ, чтобы визуально не «задевать» соседние сектора).
+ *
+ * Возвращает остаток угла поворота колеса (0..360), при котором
+ * случайная внутренняя точка сектора окажется наверху под стрелкой.
+ * Важно: сам бонус уже выбран (сервером/ГПСЧ) ДО анимации — эта функция
+ * лишь честно подводит колесо к ЕГО сектору, поэтому «куда указала
+ * стрелка — то и засчитано» выполняется всегда.
+ */
+export function pickLandingRemainderDeg(sector: { startDeg: number; sizeDeg: number }): number {
+  const pad = Math.min(6, Math.max(1, sector.sizeDeg * 0.18));
+  const span = Math.max(0.0001, sector.sizeDeg - 2 * pad);
+  const innerDeg = sector.startDeg + pad + Math.random() * span;
+  return (360 - (innerDeg % 360)) % 360;
+}
