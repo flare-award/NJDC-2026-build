@@ -1,33 +1,39 @@
 -- ============================================================
--- МИГРАЦИЯ: Фикс кнопки «ПОСТАВИТЬ ВСЁ» (bet-all)
+-- ФИНАЛЬНЫЙ ФИКС: спин-функция nodbet_spin не крутит спины
+-- ============================================================
 --
--- Выполните этот файл ЦЕЛИКОМ в Supabase → SQL Editor
--- ПОСЛЕ всех предыдущих миграций (schema, nodbet, server-authoritative...).
+-- ПРИЧИНА ПОЛОМКИ:
+--   Миграция supabase-remove-deleted-perks-migration.sql УДАЛИЛА колонки
+--   double_spin и double_spin_enabled из таблицы nodbet_profiles.
+--   Но обе версии функции nodbet_spin (2-аргументная из
+--   supabase-server-authoritative-migration.sql и 3-аргументная из
+--   supabase-bet-all-fix-migration.sql) по-прежнему ссылались на
+--   v_prof.double_spin / v_prof.double_spin_enabled.
 --
--- Что исправляет:
---  1) ПОТЕРЯ ТОЧНОСТИ float: баланс > 2^53 терял точность при передаче
---     через JSON (bigint → number → bigint). Сервер теперь сам считает
---     ставку «всё» по ТОЧНОМУ балансу из базы.
---  2) ДАБЛ-СПИН: при v_count=2 проверка v_bet*2 > balance отклоняла
---     спин «всё» ВСЕГДА. Теперь сервер делит баланс на v_count через
---     floor(), и остаток (0–1 NOD) остаётся на балансе.
+--   В Postgres тело plpgsql-функции не валидируется при CREATE, поэтому
+--   миграции «успешно» накатывались, но при ВЫПОЛНЕНИИ функция падала с
+--   ошибкой «record "v_prof" has no field "double_spin"». Результат:
+--   НЕ крутятся ВООБЩЕ никакие спины (обычные пресеты, кастом, фри-спин
+--   и «ПОСТАВИТЬ ВСЁ») — независимо от режима и размера ставки.
 --
--- Как работает:
---  • Новый параметр p_bet_all (boolean, default false).
---  • Если p_bet_all = true, сервер считает v_bet := floor(balance / v_count).
---  • Если p_bet_all = false, работает как раньше (v_bet := p_bet_amount).
---  • Проверка v_bet * v_count > balance остаётся (для bet-all она всегда проходит).
+--   Привилегия «Дабл-спин» уже удалена из клиента (в NODBET_PERKS нет
+--   double_spin), поэтому логика дабл-спина больше не нужна: v_count = 1.
 --
--- Файл идемпотентен: можно запускать повторно без ошибок.
+-- ЭТОТ ФАЙЛ запускается ПОСЛЕДНИМ (имя сортируется после
+-- supabase-server-authoritative-migration.sql), поэтому он гарантированно
+-- пересоздаёт финальную, рабочую версию функции, перезаписывая сломанные
+-- определения, оставшиеся после предыдущих миграций.
+--
+-- Идемпотентно: запускать повторно безопасно.
 -- ============================================================
 
--- Удаляем старую 2-аргументную сигнатуру, чтобы не было неоднозначности
--- выбора функции в PostgREST.
+-- Удаляем ВСЕ возможные сигнатуры (2- и 3-аргументную), чтобы не осталось
+-- ни одной сломанной версии, ссылающейся на удалённые колонки.
 drop function if exists public.nodbet_spin(bigint, text);
+drop function if exists public.nodbet_spin(bigint, text, boolean);
 
--- Создаём новую 3-аргументную сигнатуру с параметром p_bet_all.
--- Тело функции идентично исходному (из supabase-server-authoritative-migration.sql),
--- кроме вычисления v_bet после select ... for update и определения v_count.
+-- Создаём единственную, корректную 3-аргументную сигнатуру.
+-- НЕ ссылаемся на double_spin / double_spin_enabled — их больше нет.
 create or replace function public.nodbet_spin(
   p_bet_amount bigint,
   p_mode text,
@@ -40,7 +46,7 @@ declare
   v_prof public.nodbet_profiles%rowtype;
   v_mode text := lower(coalesce(p_mode, 'classic'));
   v_bet bigint;
-  v_count int := 1;
+  v_count int := 1;          -- Дабл-спин удалён → всегда один спин
   v_i int;
   v_total_delta bigint := 0;
   v_xp_raw int := 0;
@@ -75,16 +81,13 @@ begin
     return jsonb_build_object('ok', false, 'error', 'Колесо ещё крутится — подождите пару секунд!');
   end if;
 
-  -- Дабл-спин УДАЛЁН: привилегия double_spin и колонки double_spin /
-  -- double_spin_enabled удалены миграцией supabase-remove-deleted-perks-migration.sql.
-  -- Поэтому всегда один спин (v_count := 1). НЕ ссылаемся на удалённые колонки —
-  -- иначе функция падает на ВЫПОЛНЕНИИ («record has no field double_spin») и
-  -- НЕ крутятся вообще никакие спины (обычные и «поставить всё»).
-  v_count := 1;
+  -- Дабл-спин УДАЛЁН: колонки double_spin / double_spin_enabled удалены.
+  -- Поэтому всегда один спин (v_count уже = 1). НЕ трогаем удалённые колонки.
 
-  -- ФИКС: если p_bet_all = true, сервер сам считает ставку по ТОЧНОМУ балансу.
-  -- floor(balance / v_count) делит «всё» на два спина поровну при дабл-спине.
-  -- Остаток от деления (0–1 NOD) остаётся на балансе — это нормально.
+  -- ФИКС: если p_bet_all = true, сервер сам считает ставку по ТОЧНОМУ
+  -- балансу (floor(balance / v_count)). Клиент передаёт p_bet_amount, но
+  -- при bet-all сервер его игнорирует — это решает потерю точности float
+  -- на огромных балансах (> 2^53).
   if p_bet_all then
     v_bet := floor(v_prof.balance / v_count);
     if v_bet < 1 then
@@ -96,10 +99,6 @@ begin
 
   if v_bet > 0 then
     if v_bet * v_count > v_prof.balance then
-      if v_count = 2 then
-        return jsonb_build_object('ok', false, 'error',
-          'Дабл спин ставит ' || v_bet || ' NOD дважды — не хватает баланса. Уменьшите ставку или выключите дабл спин.');
-      end if;
       return jsonb_build_object('ok', false, 'error', 'Недостаточно NOD-Коинов для этого спина!');
     end if;
   end if;
@@ -182,13 +181,16 @@ begin
   );
 end $$;
 
--- Выдаём права на НОВУЮ сигнатуру (как в исходной миграции).
+-- Права на функцию (как в исходных миграциях).
 revoke all on function public.nodbet_spin(bigint, text, boolean) from public, anon;
 grant execute on function public.nodbet_spin(bigint, text, boolean) to authenticated;
 
+-- Обновляем кэш схемы PostgREST, чтобы он увидел актуальную сигнатуру
+-- функции (иначе вызовы с 3 аргументами могут отклоняться, даже если
+-- функция уже correct).
+select pg_notify('pgrst', 'reload schema');
+
 -- ============================================================
--- Готово! Теперь кнопка «ПОСТАВИТЬ ВСЁ» работает корректно:
---  • На сервере: точный расчёт по bigint-балансу (без потери точности).
---  • С дабл-спином: баланс делится на 2 спина через floor().
---  • Клиент просто шлёт p_bet_all=true, сервер сам считает ставку.
+-- Готово! Теперь крутятся ВСЕ спины: обычные пресеты/кастом/фри-спин
+-- и «ПОСТАВИТЬ ВСЁ» — и в режиме «Клатч-Рулетка», и в «Всё или ничего».
 -- ============================================================
