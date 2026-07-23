@@ -1,0 +1,8 @@
+# Netlify / Cloudflare Pages static-host headers.
+# The single-file Vite build puts all application code in index.html. Always
+# revalidate the HTML document so a newly deployed build replaces an older one
+# without asking users to perform a hard refresh.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
