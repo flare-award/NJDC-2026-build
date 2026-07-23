@@ -22,13 +22,10 @@ import { normalizeMaps, mapWinner, mapFinished, mapHadOvertime, relevantMapCount
 export type NodbetPerkId =
   | "radar"
   | "custom_status"
-  | "double_spin"
   | "hall_frame"
   | "coin_magnet"
   | "crown_badge"
   | "star_trail"
-  | "title_scroll"
-  | "neon_signature"
   | "aura"
   | "multi_bet";
 
@@ -95,16 +92,6 @@ export const NODBET_PERKS: NodbetPerk[] = [
     oneTime: true,
   },
   {
-    id: "double_spin",
-    name: "🎡 Дабл спин",
-    description:
-      "Разблокирует режим двойного вращения рулетки: колесо крутится два раза подряд, и вы можете выбить два разных бонуса за один заход. Можно включать/выключать в рулетке.",
-    cost: 63_750_000,
-    icon: "🎡",
-    badge: "DOUBLE SPIN",
-    oneTime: true,
-  },
-  {
     id: "coin_magnet",
     name: "🧲 Мультипас Хайроллера",
     description:
@@ -122,26 +109,6 @@ export const NODBET_PERKS: NodbetPerk[] = [
     cost: 3_500_000,
     icon: "✨",
     badge: "ЗВЁЗДНЫЙ СЛЕД",
-    oneTime: true,
-  },
-  {
-    id: "title_scroll",
-    name: "📜 Титульный Свиток",
-    description:
-      "Декоративный свиток с элитным титулом «★ Легенда NODBET ★», отображается над вашим никнеймом в Зале Славы. Чистая косметика — стиль и статус.",
-    cost: 3_200_000,
-    icon: "📜",
-    badge: "ТИТУЛ",
-    oneTime: true,
-  },
-  {
-    id: "neon_signature",
-    name: "💫 Неоновая Подпись",
-    description:
-      "Эффектная неоновая подсветка под вашим никнеймом в Зале Славы. Яркий неоновый след, который пульсирует и привлекает внимание.",
-    cost: 4_500_000,
-    icon: "💫",
-    badge: "НЕОН",
     oneTime: true,
   },
   {
@@ -202,8 +169,6 @@ export interface HighRoller {
   hallFrame?: boolean;
   crownBadge?: boolean;
   starTrail?: boolean;
-  titleScroll?: boolean;
-  neonSignature?: boolean;
   auraOwned?: boolean;
   auraColor?: string | null;
   auraEnabled?: boolean;
@@ -212,15 +177,11 @@ export interface HighRoller {
 
 interface NodbetInventory {
   radarUnlocked: boolean;
-  doubleSpin: boolean;
-  doubleSpinEnabled: boolean; // можно выключить, если не хочется дабл
   hallFrame: boolean;
   customStatusOwned: boolean;
   coinMagnet: boolean;
   crownBadge: boolean;
   starTrail: boolean;
-  titleScroll: boolean;
-  neonSignature: boolean;
   auraOwned: boolean;
   auraColor: string;
   auraEnabled: boolean;
@@ -248,15 +209,11 @@ interface NodbetProfileRow {
   xp: number;
   last_daily_claim: string | null;
   radar_unlocked: boolean;
-  double_spin: boolean;
-  double_spin_enabled?: boolean;
   hall_frame: boolean;
   custom_status_owned: boolean;
   coin_magnet: boolean;
   crown_badge?: boolean;
   star_trail?: boolean;
-  title_scroll?: boolean;
-  neon_signature?: boolean;
   aura_owned?: boolean;
   aura_color?: string;
   aura_enabled?: boolean;
@@ -284,7 +241,6 @@ export interface NodbetContextValue {
   hasCustomNickname: boolean;
   setProfileNickname: (raw: string) => Promise<{ ok: boolean; error?: string }>;
   setCustomStatus: (raw: string) => { ok: boolean; error?: string };
-  setDoubleSpinEnabled: (enabled: boolean) => void;
   setAuraColor: (color: string) => void;
   setAuraEnabled: (enabled: boolean) => void;
   placeBet: (
@@ -298,16 +254,14 @@ export interface NodbetContextValue {
   cancelBet: (betId: string) => Promise<{ ok: boolean; error?: string; refund?: number }>;
   spinRoulette: (
     betAmount: number,
-    mode: RouletteMode
+    mode: RouletteMode,
+    betAll?: boolean
   ) => Promise<{ ok: boolean; results: RouletteSpin[]; error?: string; balance?: number; xp?: number }>;
   commitSpin: (results: RouletteSpin[], serverTotals?: { balance: number; xp: number }) => void;
   buyPerk: (perkId: NodbetPerkId) => Promise<{ ok: boolean; error?: string }>;
   claimDailyBonus: () => Promise<{ ok: boolean; error?: string; reward?: number }>;
   activatePromoCode: (code: string) => Promise<{ ok: boolean; error?: string }>;
   hasRadar: boolean;
-  hasDoubleSpin: boolean;
-  doubleSpinEnabled: boolean;
-  doubleSpinActive: boolean;
   maxCustomBet: number;
   /** Deduct coins for double roulette bet (returns true if successful) */
   doubleRouletteDeduct: (amount: number) => { ok: boolean; error?: string };
@@ -328,15 +282,11 @@ const STARTING_XP = 0;
 function emptyInventory(): NodbetInventory {
   return {
     radarUnlocked: false,
-    doubleSpin: false,
-    doubleSpinEnabled: true, // по умолчанию включен, если куплен
     hallFrame: false,
     customStatusOwned: false,
     coinMagnet: false,
     crownBadge: false,
     starTrail: false,
-    titleScroll: false,
-    neonSignature: false,
     auraOwned: false,
     auraColor: "red",
     auraEnabled: true,
@@ -358,15 +308,11 @@ function getInitialState(userId: string): NodbetState {
         lastDailyClaim: parsed.lastDailyClaim || null,
         inventory: {
           radarUnlocked: !!parsed.inventory?.radarUnlocked,
-          doubleSpin: !!parsed.inventory?.doubleSpin,
-          doubleSpinEnabled: parsed.inventory?.doubleSpinEnabled !== false, // default true
           hallFrame: !!parsed.inventory?.hallFrame,
           customStatusOwned: !!parsed.inventory?.customStatusOwned,
           coinMagnet: !!parsed.inventory?.coinMagnet,
           crownBadge: !!parsed.inventory?.crownBadge,
           starTrail: !!parsed.inventory?.starTrail,
-          titleScroll: !!parsed.inventory?.titleScroll,
-          neonSignature: !!parsed.inventory?.neonSignature,
           auraOwned: !!parsed.inventory?.auraOwned,
           auraColor: typeof parsed.inventory?.auraColor === "string" ? parsed.inventory.auraColor : "red",
           auraEnabled: parsed.inventory?.auraEnabled !== false,
@@ -617,15 +563,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         lastDailyClaim: normalizeDate(p.last_daily_claim),
         inventory: {
           radarUnlocked: !!p.radar_unlocked,
-          doubleSpin: !!p.double_spin,
-          doubleSpinEnabled: (p as any).double_spin_enabled !== false,
           hallFrame: !!p.hall_frame,
           customStatusOwned: !!p.custom_status_owned,
           coinMagnet: !!p.coin_magnet,
           crownBadge: !!p.crown_badge,
           starTrail: !!p.star_trail,
-          titleScroll: !!p.title_scroll,
-          neonSignature: !!p.neon_signature,
           auraOwned: !!p.aura_owned,
           auraColor: typeof p.aura_color === "string" ? p.aura_color : "red",
           auraEnabled: (p as any).aura_enabled !== false,
@@ -661,15 +603,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       inventory: {
         ...prev.inventory,
         radarUnlocked: !!p.radar_unlocked,
-        doubleSpin: !!p.double_spin,
-        doubleSpinEnabled: (p as NodbetProfileRow).double_spin_enabled !== false,
         hallFrame: !!p.hall_frame,
         customStatusOwned: !!p.custom_status_owned,
         coinMagnet: !!p.coin_magnet,
         crownBadge: !!p.crown_badge,
         starTrail: !!p.star_trail,
-        titleScroll: !!p.title_scroll,
-        neonSignature: !!p.neon_signature,
         auraOwned: !!p.aura_owned,
         multiBet: !!p.multi_bet,
         promoUsed: !!p.promo_used,
@@ -827,7 +765,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
             custom_status_text: snapshot.inventory.customStatusText,
             aura_color: snapshot.inventory.auraColor,
             aura_enabled: snapshot.inventory.auraEnabled,
-            double_spin_enabled: snapshot.inventory.doubleSpinEnabled,
           })
           .eq("user_id", uid);
         if (profileErr) throw profileErr;
@@ -1136,15 +1073,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
               xp: state.xp,
               last_daily_claim: state.lastDailyClaim,
               radar_unlocked: state.inventory.radarUnlocked,
-              double_spin: state.inventory.doubleSpin,
-              double_spin_enabled: state.inventory.doubleSpinEnabled,
               hall_frame: state.inventory.hallFrame,
               custom_status_owned: state.inventory.customStatusOwned,
               coin_magnet: state.inventory.coinMagnet,
               crown_badge: state.inventory.crownBadge,
               star_trail: state.inventory.starTrail,
-              title_scroll: state.inventory.titleScroll,
-              neon_signature: state.inventory.neonSignature,
               aura_owned: state.inventory.auraOwned,
               aura_color: state.inventory.auraColor,
               aura_enabled: state.inventory.auraEnabled,
@@ -1184,13 +1117,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     },
     [state.inventory.customStatusOwned]
   );
-
-  const setDoubleSpinEnabled = useCallback((enabled: boolean) => {
-    setState((prev) => ({
-      ...prev,
-      inventory: { ...prev.inventory, doubleSpinEnabled: enabled },
-    }));
-  }, []);
 
   const setAuraColor = useCallback((color: string) => {
     setState((prev) => ({
@@ -1434,12 +1360,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   const spinRoulette = useCallback(
     async (
       betAmount: number,
-      mode: RouletteMode = "classic"
+      mode: RouletteMode = "classic",
+      betAll: boolean = false
     ): Promise<{ ok: boolean; results: RouletteSpin[]; error?: string; balance?: number; xp?: number }> => {
       if (betAmount < 0 || isNaN(betAmount)) {
         return { ok: false, results: [] as RouletteSpin[], error: "Неверная сумма ставки" };
       }
-      if (betAmount > state.balance) {
+      if (!betAll && betAmount > state.balance) {
         return { ok: false, results: [] as RouletteSpin[], error: "Недостаточно NOD-Коинов для этого спина!" };
       }
 
@@ -1450,6 +1377,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           const { data, error } = await supabase.rpc("nodbet_spin", {
             p_bet_amount: Math.round(betAmount),
             p_mode: mode,
+            p_bet_all: betAll,
           });
           if (error) {
             unlockMoney();
@@ -1498,21 +1426,22 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       const results: RouletteSpin[] = [];
       let workingStreak = state.streak;
 
-      // Дабл-спин имеет смысл только в классическом режиме.
-      const isDoubleActive = mode === "classic" && state.inventory.doubleSpin && state.inventory.doubleSpinEnabled;
-      const spinCount = isDoubleActive ? 2 : 1;
-      if (betAmount * spinCount > state.balance) {
-        return {
-          ok: false,
-          results: [],
-          error: `Дабл спин ставит ${betAmount.toLocaleString()} NOD дважды — не хватает баланса. Уменьшите ставку или выключите дабл спин.`,
-        };
+      // Дабл-спин удалён — всегда один спин.
+      const spinCount = 1;
+
+      // ФИКС: при betAll — считаем ставку по точному балансу (зеркало сервера).
+      let effectiveBet = betAmount;
+      if (betAll) {
+        effectiveBet = Math.floor(state.balance / spinCount);
+        if (effectiveBet < 1) {
+          return { ok: false, results: [], error: "У вас нет коинов, чтобы поставить всё!" };
+        }
       }
 
       for (let i = 0; i < spinCount; i++) {
         const bonusId = pickBonus(mode);
         const def = BONUSES[bonusId] || BONUSES.normal;
-        const { delta } = computeSpinResult(bonusId, betAmount);
+        const { delta } = computeSpinResult(bonusId, effectiveBet);
         workingStreak = updateStreak(workingStreak, bonusId);
 
         results.push({
@@ -1528,7 +1457,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
       return { ok: true, results };
     },
-    [state.balance, state.streak, state.inventory.doubleSpin, state.inventory.doubleSpinEnabled, unlockMoney]
+    [state.balance, state.streak, unlockMoney]
   );
 
   const commitSpin = useCallback(
@@ -1634,14 +1563,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
 
       const owned =
         (perkId === "radar" && state.inventory.radarUnlocked) ||
-        (perkId === "double_spin" && state.inventory.doubleSpin) ||
         (perkId === "hall_frame" && state.inventory.hallFrame) ||
         (perkId === "crown_badge" && state.inventory.crownBadge) ||
         (perkId === "custom_status" && state.inventory.customStatusOwned) ||
         (perkId === "coin_magnet" && state.inventory.coinMagnet) ||
         (perkId === "star_trail" && state.inventory.starTrail) ||
-        (perkId === "title_scroll" && state.inventory.titleScroll) ||
-        (perkId === "neon_signature" && state.inventory.neonSignature) ||
         (perkId === "aura" && state.inventory.auraOwned) ||
         (perkId === "multi_bet" && state.inventory.multiBet);
       if (owned) return { ok: false, error: "Эта привилегия у вас уже есть!" };
@@ -1659,15 +1585,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
             inventory: {
               ...prev.inventory,
               radarUnlocked: perkId === "radar" ? true : prev.inventory.radarUnlocked,
-              doubleSpin: perkId === "double_spin" ? true : prev.inventory.doubleSpin,
-              doubleSpinEnabled: perkId === "double_spin" ? true : prev.inventory.doubleSpinEnabled,
               hallFrame: perkId === "hall_frame" ? true : prev.inventory.hallFrame,
               crownBadge: perkId === "crown_badge" ? true : prev.inventory.crownBadge,
               customStatusOwned: perkId === "custom_status" ? true : prev.inventory.customStatusOwned,
               coinMagnet: perkId === "coin_magnet" ? true : prev.inventory.coinMagnet,
               starTrail: perkId === "star_trail" ? true : prev.inventory.starTrail,
-              titleScroll: perkId === "title_scroll" ? true : prev.inventory.titleScroll,
-              neonSignature: perkId === "neon_signature" ? true : prev.inventory.neonSignature,
               auraOwned: perkId === "aura" ? true : prev.inventory.auraOwned,
               multiBet: perkId === "multi_bet" ? true : prev.inventory.multiBet,
             },
@@ -1685,15 +1607,11 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         inventory: {
           ...prev.inventory,
           radarUnlocked: perkId === "radar" ? true : prev.inventory.radarUnlocked,
-          doubleSpin: perkId === "double_spin" ? true : prev.inventory.doubleSpin,
-          doubleSpinEnabled: perkId === "double_spin" ? true : prev.inventory.doubleSpinEnabled,
           hallFrame: perkId === "hall_frame" ? true : prev.inventory.hallFrame,
           crownBadge: perkId === "crown_badge" ? true : prev.inventory.crownBadge,
           customStatusOwned: perkId === "custom_status" ? true : prev.inventory.customStatusOwned,
           coinMagnet: perkId === "coin_magnet" ? true : prev.inventory.coinMagnet,
           starTrail: perkId === "star_trail" ? true : prev.inventory.starTrail,
-          titleScroll: perkId === "title_scroll" ? true : prev.inventory.titleScroll,
-          neonSignature: perkId === "neon_signature" ? true : prev.inventory.neonSignature,
           auraOwned: perkId === "aura" ? true : prev.inventory.auraOwned,
           multiBet: perkId === "multi_bet" ? true : prev.inventory.multiBet,
         },
@@ -1722,8 +1640,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         hallFrame: !!p.hall_frame,
         crownBadge: !!p.crown_badge,
         starTrail: !!p.star_trail,
-        titleScroll: !!p.title_scroll,
-        neonSignature: !!p.neon_signature,
         auraOwned: !!p.aura_owned,
         auraColor: typeof p.aura_color === "string" ? p.aura_color : null,
         auraEnabled: (p as any).aura_enabled !== false,
@@ -1741,8 +1657,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
         hallFrame: state.inventory.hallFrame,
         crownBadge: state.inventory.crownBadge,
         starTrail: state.inventory.starTrail,
-        titleScroll: state.inventory.titleScroll,
-        neonSignature: state.inventory.neonSignature,
         auraOwned: state.inventory.auraOwned,
         auraColor: state.inventory.auraOwned ? state.inventory.auraColor : null,
         auraEnabled: state.inventory.auraEnabled,
@@ -1756,10 +1670,10 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     }
 
     const list: HighRoller[] = [
-      { id: "hr_1", nickname: "rezo1n", balance: 84_500_000, totalWon: 210_000_000, betsCount: 42, level: 640, crownBadge: true, hallFrame: true, starTrail: true, neonSignature: true },
+      { id: "hr_1", nickname: "rezo1n", balance: 84_500_000, totalWon: 210_000_000, betsCount: 42, level: 640, crownBadge: true, hallFrame: true, starTrail: true },
       { id: "hr_2", nickname: "dony_zq", balance: 67_200_000, totalWon: 185_000_000, betsCount: 38, level: 590, hallFrame: true, auraOwned: true, auraColor: "purple", auraEnabled: true },
-      { id: "hr_3", nickname: "CyberClutch_99", balance: 52_100_000, totalWon: 140_000_000, betsCount: 29, level: 520, titleScroll: true },
-      { id: "hr_4", nickname: "Stalk_Aimer", balance: 41_800_000, totalWon: 98_000_000, betsCount: 21, level: 470, neonSignature: true },
+      { id: "hr_3", nickname: "CyberClutch_99", balance: 52_100_000, totalWon: 140_000_000, betsCount: 29, level: 520 },
+      { id: "hr_4", nickname: "Stalk_Aimer", balance: 41_800_000, totalWon: 98_000_000, betsCount: 21, level: 470 },
       { id: "hr_5", nickname: "ShokeFan_2026", balance: 36_400_000, totalWon: 85_000_000, betsCount: 19, level: 430 },
       { id: "hr_6", nickname: "awp_god_rush", balance: 29_500_000, totalWon: 64_000_000, betsCount: 15, level: 380 },
     ];
@@ -1775,8 +1689,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       hallFrame: state.inventory.hallFrame,
       crownBadge: state.inventory.crownBadge,
       starTrail: state.inventory.starTrail,
-      titleScroll: state.inventory.titleScroll,
-      neonSignature: state.inventory.neonSignature,
       auraOwned: state.inventory.auraOwned,
       auraColor: state.inventory.auraOwned ? state.inventory.auraColor : null,
       auraEnabled: state.inventory.auraEnabled,
@@ -1805,7 +1717,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       hasCustomNickname,
       setProfileNickname,
       setCustomStatus,
-      setDoubleSpinEnabled,
       setAuraColor,
       setAuraEnabled,
       placeBet,
@@ -1816,9 +1727,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       claimDailyBonus,
       activatePromoCode,
       hasRadar: state.inventory.radarUnlocked,
-      hasDoubleSpin: state.inventory.doubleSpin,
-      doubleSpinEnabled: state.inventory.doubleSpinEnabled,
-      doubleSpinActive: state.inventory.doubleSpin && state.inventory.doubleSpinEnabled,
       maxCustomBet,
       doubleRouletteDeduct,
       doubleRoulettePayout,
@@ -1841,7 +1749,6 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       hasCustomNickname,
       setProfileNickname,
       setCustomStatus,
-      setDoubleSpinEnabled,
       setAuraColor,
       setAuraEnabled,
       placeBet,
