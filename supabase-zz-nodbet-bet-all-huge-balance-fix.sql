@@ -103,6 +103,12 @@ begin
     end if;
   else
     v_bet := greatest(0, coalesce(p_bet_amount, 0));
+
+    -- Safety-net для обычной ставки: сервер никогда не отклоняет ставку
+    -- только потому, что клиент прислал сумму выше текущего баланса.
+    if v_bet > v_prof.balance then
+      v_bet := v_prof.balance;
+    end if;
   end if;
 
   -- Защита: итоговая ставка не может превышать баланс.

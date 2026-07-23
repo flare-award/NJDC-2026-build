@@ -70,11 +70,65 @@ public/NJDC 2026 regulations.pdf
 
 Рекомендуется использовать PNG с прозрачным или тёмным (#0D0D0D) фоном.
 
-## 5. Публикация на GitHub Pages
+## 5. Нормальный деплой фронтенда (автообновление без hard refresh)
 
-1. `npm run build` — соберёт сайт в папку `dist/`.
-2. Залейте содержимое `dist/` в ветку `gh-pages` (или настройте GitHub Actions деплой из `dist/`).
-3. Роутинг сайта использует `HashRouter` (ссылки вида `#/matches`), поэтому GitHub Pages будет корректно открывать любые внутренние страницы без дополнительной настройки 404.html.
+Сборка использует `vite-plugin-singlefile`: весь JavaScript встроен в один
+`dist/index.html`. Поэтому **HTML нельзя отдавать с долгим cache TTL**: иначе
+браузер продолжит исполнять прежнюю версию сайта, включая старый запрос ставки
+«ПОСТАВИТЬ ВСЁ».
+
+### Рекомендуемый вариант: Netlify или Cloudflare Pages
+
+1. Выполните `npm install`.
+2. Выполните `npm run build`. Готовый сайт находится в `dist/`.
+3. Убедитесь, что в сборку попал текущий RPC-код:
+   ```bash
+   grep -o 'p_bet_all' dist/index.html
+   ```
+   Команда должна вывести `p_bet_all` (исходный код отправляет при bet-all
+   `p_bet_amount: 0` и `p_bet_all: true`).
+4. Задеплойте **содержимое** `dist/` (не исходную папку проекта). Файл
+   `public/_headers` автоматически копируется в `dist/_headers`; Netlify и
+   Cloudflare Pages применят из него `Cache-Control: no-cache` к `/` и
+   `/index.html`. При каждом следующем открытии браузер проверит HTML у
+   сервера и сам получит новый билд — `Ctrl+Shift+R` не нужен.
+5. После деплоя откройте DevTools → Network → Document и проверьте ответ для
+   `/` или `/index.html`: в нём должен быть `Cache-Control: no-cache`.
+
+### Другой static-host / nginx
+
+Задеплойте `dist/` и настройте на хосте **для `/` и `/index.html`** заголовок
+`Cache-Control: no-cache` (равнозначный безопасный вариант:
+`max-age=0, must-revalidate`). Например, в nginx:
+
+```nginx
+location = / { add_header Cache-Control "no-cache" always; }
+location = /index.html { add_header Cache-Control "no-cache" always; }
+```
+
+Не задавайте для HTML `immutable` или длительный `max-age`. Статические файлы
+можно кэшировать отдельно, но в этой single-file сборке критичен именно HTML.
+
+### GitHub Pages
+
+GitHub Pages не читает `dist/_headers`, поэтому этот файл **не может**
+переопределить его HTTP-заголовки. Если сайт остаётся на GitHub Pages,
+нужен CDN/reverse proxy перед ним с правилами выше либо перенос на Netlify /
+Cloudflare Pages. После этого можно, как обычно, публиковать `dist/` в
+`gh-pages`; `HashRouter` (ссылки `#/matches`) не требует отдельного 404.
+
+### Обязательная SQL-проверка для большой ставки
+
+Если SQL-фикс ещё не применён в проде, откройте Supabase SQL Editor проекта
+`https://cmawshmngdgikizrsggf.supabase.co` и выполните **целиком**
+`supabase-zz-nodbet-bet-all-huge-balance-fix.sql`. Скрипт идемпотентен:
+создаёт актуальную `public.nodbet_spin(bigint, text, boolean)`, выдаёт права и
+посылает `pg_notify('pgrst', 'reload schema')`.
+
+Финальная проверка — обычный переход на прод (без hard refresh) под аккаунтом
+с балансом `84 343 999 183 658 110 NOD`. В Network у RPC `nodbet_spin` тело
+должно содержать `{"p_bet_amount":0,"p_mode":"classic","p_bet_all":true}`,
+а ответ — `{"ok":true,...}`.
 
 ## 6. Как редактировать турнир изо дня в день
 
