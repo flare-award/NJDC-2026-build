@@ -8,11 +8,13 @@ import PlayersTab from "./PlayersTab";
 import MatchesTab from "./MatchesTab";
 import FaqTab from "./FaqTab";
 import SettingsTab from "./SettingsTab";
+import HighRollersTab from "./HighRollersTab";
 
 const TABS = [
   { key: "matches", label: "Матчи" },
   { key: "teams", label: "Команды" },
   { key: "players", label: "Игроки" },
+  { key: "highrollers", label: "Хайроллеры" },
   { key: "faq", label: "FAQ" },
   { key: "settings", label: "Настройки" },
 ] as const;
@@ -80,6 +82,7 @@ export default function AdminPage() {
       {tab === "matches" && <MatchesTab />}
       {tab === "teams" && <TeamsTab />}
       {tab === "players" && <PlayersTab />}
+      {tab === "highrollers" && <HighRollersTab />}
       {tab === "faq" && <FaqTab />}
       {tab === "settings" && <SettingsTab />}
     </div>
