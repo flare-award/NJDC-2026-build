@@ -222,7 +222,7 @@ export default function NodbetPage() {
 
     // Запрашиваем результат (в онлайн-режиме его уже записал сервер),
     // баланс на экране не меняется до окончания анимации (пункт 3)
-    const { ok, results, error, balance: serverBalance, xp: serverXp } = await spinRoulette(amount, rouletteMode);
+    const { ok, results, error, balance: serverBalance, xp: serverXp } = await spinRoulette(amount, rouletteMode, spinMode === "all");
     if (!ok || !results.length) {
       setIsSpinning(false);
       setBetErrorToast(error || "Ошибка вращения");

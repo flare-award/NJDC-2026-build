@@ -298,7 +298,8 @@ export interface NodbetContextValue {
   cancelBet: (betId: string) => Promise<{ ok: boolean; error?: string; refund?: number }>;
   spinRoulette: (
     betAmount: number,
-    mode: RouletteMode
+    mode: RouletteMode,
+    betAll?: boolean
   ) => Promise<{ ok: boolean; results: RouletteSpin[]; error?: string; balance?: number; xp?: number }>;
   commitSpin: (results: RouletteSpin[], serverTotals?: { balance: number; xp: number }) => void;
   buyPerk: (perkId: NodbetPerkId) => Promise<{ ok: boolean; error?: string }>;
@@ -1434,12 +1435,13 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
   const spinRoulette = useCallback(
     async (
       betAmount: number,
-      mode: RouletteMode = "classic"
+      mode: RouletteMode = "classic",
+      betAll: boolean = false
     ): Promise<{ ok: boolean; results: RouletteSpin[]; error?: string; balance?: number; xp?: number }> => {
       if (betAmount < 0 || isNaN(betAmount)) {
         return { ok: false, results: [] as RouletteSpin[], error: "Неверная сумма ставки" };
       }
-      if (betAmount > state.balance) {
+      if (!betAll && betAmount > state.balance) {
         return { ok: false, results: [] as RouletteSpin[], error: "Недостаточно NOD-Коинов для этого спина!" };
       }
 
@@ -1450,6 +1452,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
           const { data, error } = await supabase.rpc("nodbet_spin", {
             p_bet_amount: Math.round(betAmount),
             p_mode: mode,
+            p_bet_all: betAll,
           });
           if (error) {
             unlockMoney();
@@ -1501,18 +1504,26 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       // Дабл-спин имеет смысл только в классическом режиме.
       const isDoubleActive = mode === "classic" && state.inventory.doubleSpin && state.inventory.doubleSpinEnabled;
       const spinCount = isDoubleActive ? 2 : 1;
-      if (betAmount * spinCount > state.balance) {
+
+      // ФИКС: при betAll — считаем ставку по точному балансу (зеркало сервера).
+      let effectiveBet = betAmount;
+      if (betAll) {
+        effectiveBet = Math.floor(state.balance / spinCount);
+        if (effectiveBet < 1) {
+          return { ok: false, results: [], error: "У вас нет коинов, чтобы поставить всё!" };
+        }
+      } else if (effectiveBet * spinCount > state.balance) {
         return {
           ok: false,
           results: [],
-          error: `Дабл спин ставит ${betAmount.toLocaleString()} NOD дважды — не хватает баланса. Уменьшите ставку или выключите дабл спин.`,
+          error: `Дабл спин ставит ${effectiveBet.toLocaleString()} NOD дважды — не хватает баланса. Уменьшите ставку или выключите дабл спин.`,
         };
       }
 
       for (let i = 0; i < spinCount; i++) {
         const bonusId = pickBonus(mode);
         const def = BONUSES[bonusId] || BONUSES.normal;
-        const { delta } = computeSpinResult(bonusId, betAmount);
+        const { delta } = computeSpinResult(bonusId, effectiveBet);
         workingStreak = updateStreak(workingStreak, bonusId);
 
         results.push({
