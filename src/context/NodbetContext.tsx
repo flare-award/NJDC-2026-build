@@ -1374,13 +1374,16 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       if (isSupabaseConfigured && supabase && latestUserRef.current) {
         moneyLockRef.current = true;
         try {
-          // ВАЖНО (bet-all): клиент всегда шлёт p_bet_amount (даже если
-          // betAll=true — тогда это просто текущий баланс). Сервер сам
-          // игнорирует p_bet_amount при p_bet_all=true и считает
-          // floor(balance / v_count) по ТОЧНОМУ балансу из базы — это
-          // решает потерю точности float на огромных балансах (> 2^53).
+          // ВАЖНО (bet-all): НЕ передаём огромный баланс в p_bet_amount.
+          // Даже если сервер при p_bet_all=true игнорирует это поле, PostgREST
+          // всё равно сначала разбирает JSON-параметры и приводит их к bigint.
+          // На балансах выше Number.MAX_SAFE_INTEGER клиентский number теряет
+          // точность, а на очень больших значениях такой RPC может падать ещё
+          // до входа в функцию. Для «ПОСТАВИТЬ ВСЁ» шлём безопасный 0, а сервер
+          // сам берёт ТОЧНЫЙ баланс из базы и считает ставку внутри транзакции.
+          const rpcBetAmount = betAll ? 0 : Math.round(betAmount);
           const { data, error } = await supabase.rpc("nodbet_spin", {
-            p_bet_amount: Math.round(betAmount),
+            p_bet_amount: rpcBetAmount,
             p_mode: mode,
             p_bet_all: betAll,
           });
