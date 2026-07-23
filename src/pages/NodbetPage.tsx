@@ -55,12 +55,9 @@ export default function NodbetPage() {
     claimDailyBonus,
     activatePromoCode,
     setCustomStatus,
-    setDoubleSpinEnabled,
     setAuraColor,
     setAuraEnabled,
-    hasDoubleSpin,
-    doubleSpinEnabled,
-    doubleSpinActive,
+
     maxCustomBet,
   } = useNodbet();
 
@@ -77,8 +74,6 @@ export default function NodbetPage() {
 
   /** Активный режим рулетки определяется выбранной вкладкой. */
   const rouletteMode: RouletteMode = activeTab === "allornothing" ? "allornothing" : "classic";
-  /** Дабл-спин работает только в классическом режиме. */
-  const effectiveDoubleSpin = rouletteMode === "classic" && doubleSpinActive;
 
   // Roulette state
   const [spinMode, setSpinMode] = useState<"preset" | "free" | "custom" | "all">("preset");
@@ -436,11 +431,6 @@ export default function NodbetPage() {
                 ⚡ AI-Радар
               </span>
             )}
-            {inventory.doubleSpin && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-purple-500/10 px-3 py-1 text-xs font-bold text-purple-300">
-                🎡 Дабл спин
-              </span>
-            )}
             {inventory.hallFrame && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/50 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
                 🖼️ Рамка Зала Славы
@@ -466,16 +456,6 @@ export default function NodbetPage() {
                 ✨ Звёздный След
               </span>
             )}
-            {inventory.titleScroll && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
-                📜 Титульный Свиток
-              </span>
-            )}
-            {inventory.neonSignature && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-3 py-1 text-xs font-bold text-fuchsia-300">
-                💫 Неоновая Подпись
-              </span>
-            )}
             {inventory.auraOwned && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-300">
                 🔮 Аура {inventory.auraEnabled ? "(ВКЛ)" : "(ВЫКЛ)"}
@@ -486,7 +466,7 @@ export default function NodbetPage() {
                 🎯 Мульти-Ставка (x2 лимит)
               </span>
             )}
-            {!inventory.radarUnlocked && !inventory.doubleSpin && !inventory.hallFrame && !inventory.crownBadge && !inventory.customStatusOwned && !inventory.coinMagnet && !inventory.starTrail && !inventory.titleScroll && !inventory.neonSignature && !inventory.auraOwned && !inventory.multiBet && (
+            {!inventory.radarUnlocked && !inventory.hallFrame && !inventory.crownBadge && !inventory.customStatusOwned && !inventory.coinMagnet && !inventory.starTrail && !inventory.auraOwned && !inventory.multiBet && (
               <span className="text-xs text-zinc-600">Пока нет купленных привилегий — загляните в Магазин Привилегий.</span>
             )}
           </div>
@@ -595,27 +575,9 @@ export default function NodbetPage() {
                   ) : (
                     <>
                       Честное колесо: можно и выиграть, и потерять. Чем выше ставка — тем крупнее и куш, и риск.
-                      {doubleSpinActive && <b className="text-purple-300"> Дабл спин ВКЛ — колесо крутится дважды!</b>}
-                      {hasDoubleSpin && !doubleSpinActive && <b className="text-zinc-500"> Дабл спин выключен (включите тумблер ниже).</b>}
                     </>
                   )}
                 </p>
-
-                {rouletteMode === "classic" && hasDoubleSpin && (
-                  <div className="mt-3 flex items-center justify-center gap-3 rounded-xl bg-purple-500/10 border border-purple-500/30 px-4 py-2.5">
-                    <span className="text-xs font-bold text-purple-300">🎡 Дабл спин:</span>
-                    <button
-                      onClick={() => setDoubleSpinEnabled(!doubleSpinEnabled)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${doubleSpinEnabled ? "bg-purple-600" : "bg-zinc-700"}`}
-                      title={doubleSpinEnabled ? "Выключить дабл спин" : "Включить дабл спин"}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${doubleSpinEnabled ? "translate-x-6" : "translate-x-1"}`} />
-                    </button>
-                    <span className={`text-xs font-black ${doubleSpinEnabled ? "text-purple-300" : "text-zinc-500"}`}>
-                      {doubleSpinEnabled ? "ВКЛ (x2)" : "ВЫКЛ (x1)"}
-                    </span>
-                  </div>
-                )}
               </div>
 
               {/* WHEEL */}
@@ -664,8 +626,7 @@ export default function NodbetPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-zinc-400">
                   <span>Выберите ставку на спин</span>
                   <span className="text-yellow-400 font-mono">
-                    К списанию: {effectiveSpinAmount > 0 ? `${(effectiveSpinAmount * (effectiveDoubleSpin ? 2 : 1)).toLocaleString()} NOD` : "ФРИ-СПИН (0 NOD)"}
-                    {effectiveDoubleSpin && effectiveSpinAmount > 0 ? " (x2 спина)" : ""}
+                    К списанию: {effectiveSpinAmount > 0 ? `${effectiveSpinAmount.toLocaleString()} NOD` : "ФРИ-СПИН (0 NOD)"}
                   </span>
                 </div>
 
@@ -817,7 +778,6 @@ export default function NodbetPage() {
                       <p>1. Шансы строго 5% 💀 / 10% 🟤 / 40% ⚫ / 20% 🔴 / 15% 🟣 / 10% 🟢 — как написано, без подкрутки. Размеры секторов колеса совпадают с шансами.</p>
                       <p>2. Пример на ставке 5000 NOD: ⚫ x1.25 → возврат 6250 (прибыль +1250), 🔴 x1.8 → 9000 (+4000), 🟣 x2.5 → 12500 (+7500), 🟢 x5.0 → 25000 (+20000).</p>
                       <p>3. 💀 забирает всю ставку, 🟤 — половину ставки. На фри-спине (0 NOD) даёт 50/100/250/600 без риска.</p>
-                      <p>4. Дабл спин можно включать/выключать тумблером выше, если куплен в магазине.</p>
                     </>
                   )}
                   <p className="text-zinc-500 pt-1">Прибыль и списание применяются ТОЛЬКО после остановки колеса.</p>
@@ -1071,14 +1031,11 @@ export default function NodbetPage() {
               {NODBET_PERKS.map((perk) => {
                 const isOwned =
                   (perk.id === "radar" && inventory.radarUnlocked) ||
-                  (perk.id === "double_spin" && inventory.doubleSpin) ||
                   (perk.id === "hall_frame" && inventory.hallFrame) ||
                   (perk.id === "crown_badge" && inventory.crownBadge) ||
                   (perk.id === "custom_status" && inventory.customStatusOwned) ||
                   (perk.id === "coin_magnet" && inventory.coinMagnet) ||
                   (perk.id === "star_trail" && inventory.starTrail) ||
-                  (perk.id === "title_scroll" && inventory.titleScroll) ||
-                  (perk.id === "neon_signature" && inventory.neonSignature) ||
                   (perk.id === "aura" && inventory.auraOwned) ||
                   (perk.id === "multi_bet" && inventory.multiBet);
 
@@ -1371,12 +1328,6 @@ export default function NodbetPage() {
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-col gap-1">
-                            {/* TITLE SCROLL - above everything */}
-                            {hr.titleScroll && (
-                              <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 opacity-90">
-                                ★ Легенда NODBET ★
-                              </span>
-                            )}
                             <div className="flex items-center gap-2.5 flex-wrap">
                               {/* AURA WRAPPER — above Hall Frame, wraps the nickname */}
                               {auraColorDef ? (
@@ -1435,11 +1386,6 @@ export default function NodbetPage() {
                               )}
                             </div>
                             {/* NEON SIGNATURE — below the nickname row */}
-                            {hr.neonSignature && (
-                              <span className="neon-signature text-[9px] font-bold tracking-widest uppercase" style={{ color: "#e879f9" }}>
-                                ✧ NODBET PLAYER ✧
-                              </span>
-                            )}
                           </div>
                         </td>
                         <td className="px-5 py-4 text-center">
@@ -1479,7 +1425,7 @@ export default function NodbetPage() {
             </div>
 
             <h3 className="font-display text-2xl font-black italic uppercase text-white">
-              {lastSpinResults.length > 1 ? "Результат Дабл Спина!" : "Спин завершён!"}
+              Спин завершён!
             </h3>
 
             <div className="mt-4 space-y-3">
