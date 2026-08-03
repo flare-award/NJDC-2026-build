@@ -328,16 +328,16 @@ begin
     return jsonb_build_object('ok', false, 'error', 'Требуется авторизация');
   end if;
 
+  -- Только актуальные привилегии магазина. Удалённые привилегии
+  -- (double_spin / title_scroll / neon_signature) отсутствуют — их
+  -- колонки убраны миграцией supabase-remove-deleted-perks-migration.sql.
   v_cost := case v_perk
     when 'radar' then 1530000
     when 'hall_frame' then 7225000
     when 'crown_badge' then 21250000
     when 'custom_status' then 40800000
-    when 'double_spin' then 63750000
     when 'coin_magnet' then 5525000000
     when 'star_trail' then 3500000
-    when 'title_scroll' then 3200000
-    when 'neon_signature' then 4500000
     when 'aura' then 9500000
     when 'multi_bet' then 2500000
     else null end;
@@ -355,11 +355,8 @@ begin
     when 'hall_frame' then v_prof.hall_frame
     when 'crown_badge' then coalesce(v_prof.crown_badge, false)
     when 'custom_status' then v_prof.custom_status_owned
-    when 'double_spin' then v_prof.double_spin
     when 'coin_magnet' then v_prof.coin_magnet
     when 'star_trail' then coalesce(v_prof.star_trail, false)
-    when 'title_scroll' then coalesce(v_prof.title_scroll, false)
-    when 'neon_signature' then coalesce(v_prof.neon_signature, false)
     when 'aura' then coalesce(v_prof.aura_owned, false)
     when 'multi_bet' then coalesce(v_prof.multi_bet, false)
     else false end;
@@ -370,6 +367,8 @@ begin
     return jsonb_build_object('ok', false, 'error', 'Недостаточно монет! Требуется ' || v_cost || ' NOD.');
   end if;
 
+  -- НЕ ссылаемся на удалённые колонки double_spin / double_spin_enabled /
+  -- title_scroll / neon_signature — их больше нет в таблице nodbet_profiles.
   update public.nodbet_profiles set
     balance = balance - v_cost,
     xp = xp + 500,
@@ -377,12 +376,8 @@ begin
     hall_frame          = case when v_perk = 'hall_frame' then true else hall_frame end,
     crown_badge         = case when v_perk = 'crown_badge' then true else coalesce(crown_badge, false) end,
     custom_status_owned = case when v_perk = 'custom_status' then true else custom_status_owned end,
-    double_spin         = case when v_perk = 'double_spin' then true else double_spin end,
-    double_spin_enabled = case when v_perk = 'double_spin' then true else coalesce(double_spin_enabled, true) end,
     coin_magnet         = case when v_perk = 'coin_magnet' then true else coin_magnet end,
     star_trail          = case when v_perk = 'star_trail' then true else coalesce(star_trail, false) end,
-    title_scroll        = case when v_perk = 'title_scroll' then true else coalesce(title_scroll, false) end,
-    neon_signature      = case when v_perk = 'neon_signature' then true else coalesce(neon_signature, false) end,
     aura_owned          = case when v_perk = 'aura' then true else coalesce(aura_owned, false) end,
     multi_bet           = case when v_perk = 'multi_bet' then true else coalesce(multi_bet, false) end
   where user_id = v_uid
@@ -1095,7 +1090,9 @@ grant select on table public.nodbet_profiles to anon, authenticated;
 -- Создать профиль можно только «пустым» (баланс = default 10000).
 grant insert (user_id, nickname) on table public.nodbet_profiles to authenticated;
 -- Напрямую разрешены только косметические поля.
-grant update (nickname, custom_status_text, aura_color, aura_enabled, double_spin_enabled)
+-- (double_spin_enabled удалён из GRANT: колонки больше нет — привилегия
+-- «Дабл спин» убрана миграцией supabase-remove-deleted-perks-migration.sql.)
+grant update (nickname, custom_status_text, aura_color, aura_enabled)
   on table public.nodbet_profiles to authenticated;
 
 -- --- nodbet_bets / nodbet_roulette_spins: только чтение своих ---
