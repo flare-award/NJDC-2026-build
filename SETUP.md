@@ -188,6 +188,7 @@ Cloudflare Pages. После этого можно, как обычно, пуб�
 Файл `supabase-caseup-migration.sql` добавляет игру **CASEUP** (слоган *Open. Upgrade. Profit.*) — новую вкладку **1DONY** в шапке сайта (рядом с NODBET, роут `/#/caseup`):
 
 - **Как применить**: Supabase → SQL Editor → выполнить файл ЦЕЛИКОМ **после** `supabase-nodbet-migration.sql` (игра использует баланс NOD и украшения из `nodbet_profiles`). Идемпотентен: повторный запуск безопасен.
+- **Разделы вкладки 1DONY**: Кейсы → **Апгрейд** (Модернизация Оружия 2.0) → Рынок → Магазин → Топ открывателей → Инвентарь. Апгрейд — отдельный раздел сразу после Кейсов; из инвентаря («Апгрейд оружия» в карточке предмета) открывается он же с предвыбранным предметом.
 - **Что создаёт**:
   - Таблицы: `caseup_cases`, `caseup_items`, `caseup_inventory`, `caseup_opens`, `caseup_boosts`, `caseup_market_trades` + колонки `caseup_cases_opened`, `caseup_spent` в `nodbet_profiles`.
   - Сид каталога: 4 кейса и 28 предметов (скины + 4 ножа). Сид генерируется из `src/data/caseupCatalog.ts` скриптом `scripts/gen-caseup-sql.mjs` — после правок каталога запустите его, чтобы SQL и клиент не разошлись.

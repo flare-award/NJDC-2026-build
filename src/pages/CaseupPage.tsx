@@ -1,23 +1,25 @@
 // ============================================================
 // CASEUP by 1DONY — главная страница игры.
 // Слоган: Open. Upgrade. Profit.
-// Разделы: Кейсы · Рынок · Магазин · Топ открывателей · Инвентарь
+// Разделы: Кейсы · Апгрейд · Рынок · Магазин · Топ открывателей · Инвентарь
 // ============================================================
 import { useEffect, useState } from "react";
-import { Box, Store, ShoppingBag, Trophy, Backpack, TriangleAlert, Flame } from "lucide-react";
+import { Box, Store, ShoppingBag, Trophy, Backpack, TriangleAlert, Flame, Hammer } from "lucide-react";
 import { useCaseup } from "../context/CaseupContext";
 import { useNodbet } from "../context/NodbetContext";
 import { fmtNod } from "../utils/caseup";
 import CasesSection from "../components/caseup/CasesSection";
+import UpgradeSection from "../components/caseup/UpgradeSection";
 import MarketSection from "../components/caseup/MarketSection";
 import ShopSection from "../components/caseup/ShopSection";
 import TopOpenersSection from "../components/caseup/TopOpenersSection";
 import InventorySection from "../components/caseup/InventorySection";
 
-type TabKey = "cases" | "market" | "shop" | "top" | "inventory";
+type TabKey = "cases" | "upgrade" | "market" | "shop" | "top" | "inventory";
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "cases", label: "Кейсы", icon: <Box size={15} /> },
+  { key: "upgrade", label: "Апгрейд", icon: <Hammer size={15} /> },
   { key: "market", label: "Рынок", icon: <Store size={15} /> },
   { key: "shop", label: "Магазин", icon: <ShoppingBag size={15} /> },
   { key: "top", label: "Топ открывателей", icon: <Trophy size={15} /> },
@@ -28,12 +30,35 @@ export default function CaseupPage() {
   const { demoMode, loading, inventory, toast, balance } = useCaseup();
   const { balance: nodBalance } = useNodbet();
   const [tab, setTab] = useState<TabKey>("cases");
+  // Предвыбранный предмет для раздела «Апгрейд» (переход из инвентаря)
+  const [upgradeInvId, setUpgradeInvId] = useState<string | null>(null);
 
-  // Переход в инвентарь из модалок открытия/апгрейда
+  // Переход в инвентарь из модалок открытия
   useEffect(() => {
     const handler = () => setTab("inventory");
     window.addEventListener("caseup-goto-inventory", handler);
     return () => window.removeEventListener("caseup-goto-inventory", handler);
+  }, []);
+
+  // Переходы между разделами (кнопки «К кейсам», «В инвентарь» и т.п.)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tab?: string } | undefined;
+      if (detail?.tab) setTab(detail.tab as TabKey);
+    };
+    window.addEventListener("caseup-goto-tab", handler);
+    return () => window.removeEventListener("caseup-goto-tab", handler);
+  }, []);
+
+  // Переход в раздел «Апгрейд» с предвыбранным предметом из инвентаря
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { invId?: string | null } | undefined;
+      setUpgradeInvId(detail?.invId ?? null);
+      setTab("upgrade");
+    };
+    window.addEventListener("caseup-goto-upgrade", handler);
+    return () => window.removeEventListener("caseup-goto-upgrade", handler);
   }, []);
 
   const displayBalance = balance || nodBalance;
@@ -94,7 +119,11 @@ export default function CaseupPage() {
         {TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => {
+              setTab(t.key);
+              // При ручном переходе в «Апгрейд» не тащим старый предвыбор из инвентаря
+              if (t.key === "upgrade") setUpgradeInvId(null);
+            }}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black transition-all sm:text-sm ${
               tab === t.key
                 ? "bg-gradient-to-r from-violet-600 via-fuchsia-600 to-violet-600 text-white shadow-lg shadow-violet-900/40"
@@ -113,6 +142,7 @@ export default function CaseupPage() {
       {/* ===== Контент ===== */}
       <div className="mt-6">
         {tab === "cases" && <CasesSection />}
+        {tab === "upgrade" && <UpgradeSection initialInvId={upgradeInvId} />}
         {tab === "market" && <MarketSection />}
         {tab === "shop" && <ShopSection />}
         {tab === "top" && <TopOpenersSection />}

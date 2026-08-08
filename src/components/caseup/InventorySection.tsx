@@ -18,9 +18,13 @@ import {
   type CaseupItemView,
 } from "../../utils/caseup";
 import { SectionTitle, ItemCard, PriceChip, CaseupButton, EmptyState, RarityPlate } from "./CaseupShared";
-import UpgradeModal from "./UpgradeModal";
 
 type SortKey = "recent" | "price_high" | "price_low" | "rarity";
+
+/** Переход в раздел «Апгрейд» вкладки 1DONY (с предвыбранным предметом). */
+function goToUpgrade(invId?: string | null) {
+  window.dispatchEvent(new CustomEvent("caseup-goto-upgrade", { detail: { invId: invId ?? null } }));
+}
 
 const SOURCE_LABEL: Record<string, string> = {
   case: "Открыт из кейса",
@@ -33,12 +37,10 @@ function ItemDetailModal({
   row,
   item,
   onClose,
-  onUpgrade,
 }: {
   row: CaseupInventoryRow;
   item: CaseupItemView;
   onClose: () => void;
-  onUpgrade: () => void;
 }) {
   const { marketSell, boosts, notify, mode } = useCaseup();
   const { user, setAuthModalOpen, setAuthMode } = useUserAuth();
@@ -114,7 +116,14 @@ function ItemDetailModal({
             <CaseupButton onClick={handleSell} variant="success" disabled={selling} className="w-full">
               <ShoppingCart size={15} /> {selling ? "Продаём..." : `Продать на рынке за ${fmtNod(payout)} NOD`}
             </CaseupButton>
-            <CaseupButton onClick={onUpgrade} variant="gold" className="w-full">
+            <CaseupButton
+              onClick={() => {
+                goToUpgrade(row.id);
+                onClose();
+              }}
+              variant="gold"
+              className="w-full"
+            >
               <Hammer size={15} /> Апгрейд оружия
             </CaseupButton>
           </div>
@@ -135,7 +144,6 @@ export default function InventorySection() {
   const [rarities, setRarities] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortKey>("recent");
   const [detail, setDetail] = useState<CaseupInventoryRow | null>(null);
-  const [upgradeFor, setUpgradeFor] = useState<string | null>(null);
   const [sellBusy, setSellBusy] = useState<string | null>(null);
   const online = mode === "online";
 
@@ -191,7 +199,7 @@ export default function InventorySection() {
         title="Инвентарь"
         subtitle={`Все полученные предметы — ${inventory.length} шт., общая стоимость ${fmtNod(totalValue)} NOD`}
         right={
-          <CaseupButton variant="gold" onClick={() => setUpgradeFor(null)}>
+          <CaseupButton variant="gold" onClick={() => goToUpgrade(null)}>
             <Hammer size={15} /> Апгрейд оружия 2.0
           </CaseupButton>
         }
@@ -292,17 +300,8 @@ export default function InventorySection() {
       )}
 
       {detail && detailItem && (
-        <ItemDetailModal
-          row={detail}
-          item={detailItem}
-          onClose={() => setDetail(null)}
-          onUpgrade={() => {
-            setUpgradeFor(detail.id);
-            setDetail(null);
-          }}
-        />
+        <ItemDetailModal row={detail} item={detailItem} onClose={() => setDetail(null)} />
       )}
-      <UpgradeModal open={upgradeFor !== null} initialInvId={upgradeFor} onClose={() => setUpgradeFor(null)} onGoInventory={() => setUpgradeFor(null)} />
     </div>
   );
 }
