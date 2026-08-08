@@ -37,6 +37,40 @@ import { STAGE_LABELS } from "../utils/scoring";
 const SPIN_PRESETS = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000];
 const CUSTOM_MIN = 50000;
 
+type BetsSection = "line" | "my_bets";
+
+function BetSectionNav({
+  activeSection,
+  pendingCount,
+  onChange,
+}: {
+  activeSection: BetsSection;
+  pendingCount: number;
+  onChange: (section: BetsSection) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-[#141414] p-2 shadow-lg">
+      <span className="px-3 text-xs font-black uppercase tracking-wider text-zinc-500">Ставки</span>
+      {[
+        { key: "line" as const, label: "⚡ Линия ставок" },
+        { key: "my_bets" as const, label: `📜 Мои ставки${pendingCount ? ` · ${pendingCount}` : ""}` },
+      ].map((section) => (
+        <button
+          key={section.key}
+          onClick={() => onChange(section.key)}
+          className={`rounded-xl px-4 py-2.5 text-xs font-black transition-all cursor-pointer sm:text-sm ${
+            activeSection === section.key
+              ? "bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 text-white shadow-lg shadow-red-600/30"
+              : "text-zinc-400 hover:bg-white/10 hover:text-white"
+          }`}
+        >
+          {section.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function NodbetPage() {
   const {
     balance,
@@ -63,7 +97,8 @@ export default function NodbetPage() {
   } = useNodbet();
 
   const { matches, teams } = useData();
-  const [activeTab, setActiveTab] = useState<"roulette" | "double_roulette" | "allornothing" | "line" | "shop" | "my_bets" | "leaderboard" | "archive">("roulette");
+  const [activeTab, setActiveTab] = useState<"roulette" | "double_roulette" | "allornothing" | "bets" | "shop" | "leaderboard" | "archive">("roulette");
+  const [betsSection, setBetsSection] = useState<"line" | "my_bets">("line");
 
   // Automatically switch to double roulette tab on mount/refresh if the player has an active lobby saved
   useEffect(() => {
@@ -534,15 +569,17 @@ export default function NodbetPage() {
                 { key: "roulette", label: "🎰 Клатч-Рулетка", desc: "Честное колесо и фри-спин" },
                 { key: "double_roulette", label: "⚔️ Двойная-Рулетка", desc: "Мультиплеер лобби (2-4 игрока)" },
                 { key: "allornothing", label: "🎲 Всё или ничего", desc: "50% Джекпот · 50% Неудача" },
-                { key: "line", label: "⚡ Линия ставок", desc: `Боевые линии · ${matches.length} игр` },
+                { key: "bets", label: "🎯 Ставки", desc: `Линия и мои ставки · ${pendingBets.length} в игре` },
                 { key: "shop", label: "👑 Магазин", desc: "Честные привилегии" },
-                { key: "my_bets", label: "📜 Мои ставки", desc: `В игре: ${pendingBets.length}` },
-                { key: "archive", label: "🏛️ Архив (1 Сезон)", desc: "Исторический зал славы 1 сезона" },
                 { key: "leaderboard", label: "🏆 Зал Славы (2 Сезон)", desc: "Топ Хайроллеров Сезона 2" },
+                { key: "archive", label: "🏛️ Архив (1 Сезон)", desc: "Исторический зал славы 1 сезона" },
               ].map((t) => (
                 <button
                   key={t.key}
-                  onClick={() => setActiveTab(t.key as typeof activeTab)}
+                  onClick={() => {
+                    setActiveTab(t.key as typeof activeTab);
+                    if (t.key === "bets") setBetsSection("line");
+                  }}
                   className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-black transition-all cursor-pointer whitespace-nowrap ${
                     activeTab === t.key
                       ? "bg-gradient-to-r from-red-600 via-red-500 to-yellow-500 text-white shadow-lg shadow-red-600/30 scale-102"
@@ -814,8 +851,10 @@ export default function NodbetPage() {
         )}
 
         {/* ======================= TAB 2: LINE (MATCH BETS) ======================= */}
-        {activeTab === "line" && (
-          <div className="grid gap-8 lg:grid-cols-12 items-start">
+        {activeTab === "bets" && betsSection === "line" && (
+          <div className="space-y-6">
+            <BetSectionNav activeSection={betsSection} pendingCount={pendingBets.length} onChange={setBetsSection} />
+            <div className="grid gap-8 lg:grid-cols-12 items-start">
             {/* MATCHES LIST */}
             <div className="lg:col-span-8 space-y-6">
               <div className="flex items-center justify-between">
@@ -1035,6 +1074,7 @@ export default function NodbetPage() {
                 )}
               </div>
             </div>
+            </div>
           </div>
         )}
 
@@ -1200,8 +1240,10 @@ export default function NodbetPage() {
         )}
 
         {/* ======================= TAB 4: MY BETS ======================= */}
-        {activeTab === "my_bets" && (
-          <div className="space-y-8">
+        {activeTab === "bets" && betsSection === "my_bets" && (
+          <div className="space-y-6">
+            <BetSectionNav activeSection={betsSection} pendingCount={pendingBets.length} onChange={setBetsSection} />
+            <div className="space-y-8">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
                 <History className="text-yellow-400" /> История и активные ставки
@@ -1287,6 +1329,7 @@ export default function NodbetPage() {
                 )}
               </div>
             )}
+            </div>
           </div>
         )}
 
@@ -1460,9 +1503,6 @@ export default function NodbetPage() {
                     <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-black uppercase tracking-wider text-red-400 border border-red-500/40 animate-pulse">
                       ✨ Сезон 2 • Активная Эра
                     </span>
-                    <span className="rounded-full bg-yellow-500/20 px-3 py-1 text-xs font-bold text-yellow-300 border border-yellow-500/30">
-                      🚀 С чистого листа
-                    </span>
                   </div>
                   <h3 className="font-display text-3xl font-black italic tracking-wide text-white drop-shadow-md">
                     ЗАЛ СЛАВЫ <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-red-500">СЕЗОНА 2</span>
@@ -1575,7 +1615,7 @@ export default function NodbetPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {sortedSeason2HighRollers.map((hr, idx) => {
+                  {sortedSeason2HighRollers.slice(3).map((hr, idx) => {
                     const auraColorDef = hr.auraOwned && hr.auraEnabled && hr.auraColor
                       ? AURA_COLORS.find((c) => c.id === hr.auraColor)
                       : null;
@@ -1584,11 +1624,11 @@ export default function NodbetPage() {
                       <tr
                         key={hr.id}
                         className={`transition-colors ${
-                          hr.isCurrentUser ? "bg-red-950/40 border-l-4 border-red-500" : hr.hallFrame ? "bg-amber-500/[0.06]" : idx < 3 ? "bg-yellow-500/[0.04]" : ""
+                          hr.isCurrentUser ? "bg-red-950/40 border-l-4 border-red-500" : hr.hallFrame ? "bg-amber-500/[0.06]" : ""
                         }`}
                       >
                         <td className="px-5 py-4 font-display text-lg font-bold text-zinc-400">
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                          {idx + 4}
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-col gap-1">
