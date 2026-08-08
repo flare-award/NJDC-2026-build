@@ -269,6 +269,12 @@ export interface NodbetContextValue {
   doubleRoulettePayout: (amount: number, xpGain: number) => void;
   /** Ставка в Двойной-Рулетке: в онлайн-режиме списание делает сервер (RPC). */
   doubleRoulettePlaceBet: (lobbyId: string, amount: number, bonusId: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Только для локального (демо) режима без Supabase: применить дельту
+   * баланса NOD (используется CASEUP by 1DONY). В онлайн-режиме баланс
+   * меняет только сервер — здесь no-op.
+   */
+  adjustLocalBalance: (delta: number, xpGain?: number) => void;
   /** Перечитать свой профиль с сервера (баланс/XP/инвентарь = истина сервера). */
   refreshOwnProfile: () => Promise<void>;
 }
@@ -1531,6 +1537,24 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
     [state.inventory.coinMagnet]
   );
 
+  /**
+   * CASEUP by 1DONY: локальный (демо) режим без Supabase — списание/
+   * начисление NOD и XP прямо в локальное состояние. В онлайн-режиме
+   * баланс меняет только сервер (RPC), поэтому здесь no-op.
+   */
+  const adjustLocalBalance = useCallback(
+    (delta: number, xpGain: number = 0) => {
+      if (isSupabaseConfigured && supabase) return; // онлайн — только сервер
+      const magnet = state.inventory.coinMagnet ? 1.1 : 1;
+      setState((prev) => ({
+        ...prev,
+        balance: Math.max(0, prev.balance + Math.round(delta)),
+        xp: prev.xp + Math.round(xpGain * magnet),
+      }));
+    },
+    [state.inventory.coinMagnet]
+  );
+
   // Ставка в Двойной-Рулетке: в онлайн-режиме списание выполняет сервер
   // (RPC nodbet_double_place_bet), который также фиксирует пик и готовность.
   // В локальном режиме — старое локальное списание.
@@ -1739,6 +1763,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       doubleRouletteDeduct,
       doubleRoulettePayout,
       doubleRoulettePlaceBet,
+      adjustLocalBalance,
       refreshOwnProfile,
     }),
     [
@@ -1770,6 +1795,7 @@ export function NodbetProvider({ children }: { children: ReactNode }) {
       doubleRouletteDeduct,
       doubleRoulettePayout,
       doubleRoulettePlaceBet,
+      adjustLocalBalance,
       refreshOwnProfile,
     ]
   );

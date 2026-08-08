@@ -3,6 +3,7 @@ import { DataProvider } from "./context/DataContext";
 import { AuthProvider } from "./context/AuthContext";
 import { UserAuthProvider } from "./context/UserAuthContext";
 import { NodbetProvider } from "./context/NodbetContext";
+import { CaseupProvider } from "./context/CaseupContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import SideBanners from "./components/SideBanners";
@@ -16,6 +17,7 @@ import MatchDetail from "./pages/MatchDetail";
 import Leaderboard from "./pages/Leaderboard";
 import AdminPage from "./pages/admin/AdminPage";
 import NodbetPage from "./pages/NodbetPage";
+import CaseupPage from "./pages/CaseupPage";
 import ResetPassword from "./pages/ResetPassword";
 
 function SiteLayout({ children }: { children: React.ReactNode }) {
@@ -35,11 +37,13 @@ export default function App() {
       <UserAuthProvider>
         <DataProvider>
           <NodbetProvider>
-            <EmailConfirmOverlay />
-            <HashRouter>
-              <Routes>
-                <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
-                <Route path="/nodbet" element={<SiteLayout><NodbetPage /></SiteLayout>} />
+            <CaseupProvider>
+              <EmailConfirmOverlay />
+              <HashRouter>
+                <Routes>
+                  <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
+                  <Route path="/nodbet" element={<SiteLayout><NodbetPage /></SiteLayout>} />
+                  <Route path="/caseup" element={<SiteLayout><CaseupPage /></SiteLayout>} />
                 <Route path="/teams" element={<SiteLayout><Teams /></SiteLayout>} />
                 <Route path="/teams/:id" element={<SiteLayout><TeamDetail /></SiteLayout>} />
                 <Route path="/bracket" element={<SiteLayout><Bracket /></SiteLayout>} />
@@ -55,9 +59,10 @@ export default function App() {
                     </div>
                   }
                 />
-                <Route path="*" element={<SiteLayout><Home /></SiteLayout>} />
-              </Routes>
-            </HashRouter>
+                  <Route path="*" element={<SiteLayout><Home /></SiteLayout>} />
+                </Routes>
+              </HashRouter>
+            </CaseupProvider>
           </NodbetProvider>
         </DataProvider>
       </UserAuthProvider>
