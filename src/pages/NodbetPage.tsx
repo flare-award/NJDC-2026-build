@@ -397,7 +397,7 @@ export default function NodbetPage() {
                 Официальный спонсор NJDC 2026
               </div>
               <h1 className="mt-3 font-display text-4xl sm:text-5xl lg:text-6xl font-black italic uppercase tracking-tight text-white leading-none">
-                АРЕНА <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-amber-300">NODBET</span>
+                АРЕНА <span className="inline-block pr-[0.16em] text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-amber-300">NODBET</span>
               </h1>
               <p className="mt-2 text-sm sm:text-base text-zinc-300">
                 Честная рулетка с реальными шансами, ставки по картам матчей (Bo2/Bo3), магазин без читов и Топ Хайроллеров. Зарабатывайте XP и поднимайтесь на вершину!
@@ -1505,7 +1505,7 @@ export default function NodbetPage() {
                     </span>
                   </div>
                   <h3 className="font-display text-3xl font-black italic tracking-wide text-white drop-shadow-md">
-                    ЗАЛ СЛАВЫ <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-red-500">СЕЗОНА 2</span>
+                    ЗАЛ СЛАВЫ <span className="inline-block pr-[0.16em] text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-red-500">СЕЗОНА 2</span>
                   </h3>
                   <p className="text-sm text-zinc-300 max-w-xl">
                     Добро пожаловать в новый сезон NODBET! Прогресс всех игроков был успешно обнулён. Начальный баланс каждого участника — <span className="text-yellow-400 font-bold">10 000 NOD</span>. Сделайте первые ставки, крутите рулетку и займите первое место на пьедестале!
