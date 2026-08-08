@@ -8,7 +8,8 @@ import NicknameModal from "./NicknameModal";
 
 const LINKS = [
   { to: "/", label: "Главная", end: true },
-  { to: "/nodbet", label: "NODBET 🎰", special: true },
+  { to: "/nodbet", label: "NODBET 🎰", special: true, accent: "red" as const },
+  { to: "/caseup", label: "1DONY 🎁", special: true, accent: "violet" as const },
   { to: "/teams", label: "Команды" },
   { to: "/bracket", label: "Турнирная сетка" },
   { to: "/matches", label: "Матчи" },
@@ -55,33 +56,39 @@ export default function Navbar() {
           </button>
 
           <nav className="hidden items-center gap-1 lg:flex">
-            {LINKS.map((l) => (
-              <NavLink
-                key={l.to}
-                to={l.to}
-                end={l.end}
-                className={({ isActive }) =>
-                  `rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
-                    l.special
-                      ? isActive
-                        ? "bg-red-600/20 text-yellow-300 border border-red-500/40 shadow-sm"
-                        : "text-red-400 hover:bg-red-600/10 hover:text-yellow-300 font-bold"
-                      : isActive
-                      ? "text-white"
-                      : "text-zinc-400 hover:text-white"
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <span className="relative flex items-center gap-1">
-                    {l.label}
-                    {isActive && !l.special && (
-                      <span className="absolute -bottom-[9px] left-0 right-0 h-[2px] bg-gradient-brand" />
-                    )}
-                  </span>
-                )}
-              </NavLink>
-            ))}
+            {LINKS.map((l) => {
+              const accentStyles =
+                l.accent === "violet"
+                  ? {
+                      active: "bg-violet-600/20 text-cyan-300 border border-violet-500/40 shadow-sm",
+                      idle: "text-violet-400 hover:bg-violet-600/10 hover:text-cyan-300 font-bold",
+                    }
+                  : {
+                      active: "bg-red-600/20 text-yellow-300 border border-red-500/40 shadow-sm",
+                      idle: "text-red-400 hover:bg-red-600/10 hover:text-yellow-300 font-bold",
+                    };
+              return (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  end={l.end}
+                  className={({ isActive }) =>
+                    `rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
+                      l.special ? (isActive ? accentStyles.active : accentStyles.idle) : isActive ? "text-white" : "text-zinc-400 hover:text-white"
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <span className="relative flex items-center gap-1">
+                      {l.label}
+                      {isActive && !l.special && (
+                        <span className="absolute -bottom-[9px] left-0 right-0 h-[2px] bg-gradient-brand" />
+                      )}
+                    </span>
+                  )}
+                </NavLink>
+              );
+            })}
           </nav>
 
           <div className="hidden items-center gap-3 lg:flex">
@@ -153,27 +160,25 @@ export default function Navbar() {
               <span>{balance.toLocaleString()} NOD →</span>
             </Link>
 
-            {LINKS.map((l) => (
-              <NavLink
-                key={l.to}
-                to={l.to}
-                end={l.end}
-                onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  `rounded-md px-3 py-2.5 text-sm font-medium ${
-                    l.special
-                      ? isActive
-                        ? "bg-red-600/20 text-yellow-300 font-bold"
-                        : "text-red-400 font-bold"
-                      : isActive
-                      ? "bg-white/5 text-white"
-                      : "text-zinc-400"
-                  }`
-                }
-              >
-                {l.label}
-              </NavLink>
-            ))}
+            {LINKS.map((l) => {
+              const accentIdle = l.accent === "violet" ? "text-violet-400" : "text-red-400";
+              const accentActive = l.accent === "violet" ? "bg-violet-600/20 text-cyan-300" : "bg-red-600/20 text-yellow-300";
+              return (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  end={l.end}
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    `rounded-md px-3 py-2.5 text-sm font-medium ${
+                      l.special ? (isActive ? `${accentActive} font-bold` : `${accentIdle} font-bold`) : isActive ? "bg-white/5 text-white" : "text-zinc-400"
+                    }`
+                  }
+                >
+                  {l.label}
+                </NavLink>
+              );
+            })}
             <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between">
               {user ? (
                 <div className="flex items-center gap-2 text-xs text-zinc-300 truncate">
