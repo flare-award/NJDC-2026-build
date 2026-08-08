@@ -19,6 +19,7 @@ import { useNodbet, NODBET_PERKS, AURA_COLORS, type NodbetPerkId, type RouletteS
 import { useData } from "../context/DataContext";
 import DoubleRouletteView from "../components/DoubleRouletteView";
 import NodbetChat from "../components/NodbetChat";
+import { SEASON_1_ARCHIVE_HIGH_ROLLERS } from "../data/season1Archive";
 import {
   BONUSES,
   ROULETTE_PRESETS,
@@ -62,7 +63,7 @@ export default function NodbetPage() {
   } = useNodbet();
 
   const { matches, teams } = useData();
-  const [activeTab, setActiveTab] = useState<"roulette" | "double_roulette" | "allornothing" | "line" | "shop" | "my_bets" | "leaderboard">("roulette");
+  const [activeTab, setActiveTab] = useState<"roulette" | "double_roulette" | "allornothing" | "line" | "shop" | "my_bets" | "leaderboard" | "archive">("roulette");
 
   // Automatically switch to double roulette tab on mount/refresh if the player has an active lobby saved
   useEffect(() => {
@@ -97,8 +98,13 @@ export default function NodbetPage() {
   // Custom status input
   const [statusInput, setStatusInput] = useState<string>("");
 
-  // Leaderboard category
+  // Leaderboard category & search (Season 2)
   const [leaderboardCategory, setLeaderboardCategory] = useState<"balance" | "totalWon" | "betsCount" | "level">("balance");
+  const [season2Search, setSeason2Search] = useState<string>("");
+
+  // Archive category & search (Season 1)
+  const [archiveCategory, setArchiveCategory] = useState<"balance" | "totalWon" | "betsCount" | "level">("balance");
+  const [archiveSearch, setArchiveSearch] = useState<string>("");
 
   // Promo code state (пункт 6)
   const [promoInput, setPromoInput] = useState<string>("");
@@ -152,8 +158,10 @@ export default function NodbetPage() {
   const pendingBets = useMemo(() => bets.filter((b) => b.status === "pending"), [bets]);
   const resolvedBets = useMemo(() => bets.filter((b) => b.status !== "pending"), [bets]);
 
-  const sortedHighRollers = useMemo(() => {
-    const sorted = [...highRollers];
+  const sortedSeason2HighRollers = useMemo(() => {
+    const sorted = [...highRollers].filter((hr) =>
+      season2Search ? hr.nickname.toLowerCase().includes(season2Search.toLowerCase()) : true
+    );
     switch (leaderboardCategory) {
       case "totalWon":
         return sorted.sort((a, b) => b.totalWon - a.totalWon);
@@ -165,7 +173,24 @@ export default function NodbetPage() {
       default:
         return sorted.sort((a, b) => b.balance - a.balance);
     }
-  }, [highRollers, leaderboardCategory]);
+  }, [highRollers, leaderboardCategory, season2Search]);
+
+  const sortedArchiveHighRollers = useMemo(() => {
+    const sorted = [...SEASON_1_ARCHIVE_HIGH_ROLLERS].filter((hr) =>
+      archiveSearch ? hr.nickname.toLowerCase().includes(archiveSearch.toLowerCase()) : true
+    );
+    switch (archiveCategory) {
+      case "totalWon":
+        return sorted.sort((a, b) => b.totalWon - a.totalWon);
+      case "betsCount":
+        return sorted.sort((a, b) => b.betsCount - a.betsCount);
+      case "level":
+        return sorted.sort((a, b) => b.level - a.level);
+      case "balance":
+      default:
+        return sorted.sort((a, b) => b.balance - a.balance);
+    }
+  }, [archiveCategory, archiveSearch]);
 
   const handleDailyBonus = async () => {
     const { ok, error, reward } = await claimDailyBonus();
@@ -512,7 +537,8 @@ export default function NodbetPage() {
                 { key: "line", label: "⚡ Линия ставок", desc: `Боевые линии · ${matches.length} игр` },
                 { key: "shop", label: "👑 Магазин", desc: "Честные привилегии" },
                 { key: "my_bets", label: "📜 Мои ставки", desc: `В игре: ${pendingBets.length}` },
-                { key: "leaderboard", label: "🏆 Зал Славы", desc: "Топ Хайроллеров по балансу" },
+                { key: "archive", label: "🏛️ Архив (1 Сезон)", desc: "Исторический зал славы 1 сезона" },
+                { key: "leaderboard", label: "🏆 Зал Славы (2 Сезон)", desc: "Топ Хайроллеров Сезона 2" },
               ].map((t) => (
                 <button
                   key={t.key}
@@ -1264,15 +1290,30 @@ export default function NodbetPage() {
           </div>
         )}
 
-        {/* ======================= TAB 5: LEADERBOARD ======================= */}
-        {activeTab === "leaderboard" && (
-          <div className="space-y-6">
+        {/* ======================= TAB: ARCHIVE (SEASON 1) ======================= */}
+        {activeTab === "archive" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div>
-                <h3 className="font-display text-xl font-bold text-white flex items-center gap-2">
-                  <Crown className="text-yellow-400" /> Зал Славы Хайроллеров
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="rounded-full bg-amber-500/20 px-3 py-0.5 text-xs font-bold text-amber-300 border border-amber-500/40">
+                    🏛️ 1 Сезон (Архив)
+                  </span>
+                  <span className="text-xs text-zinc-400">Информация заморожена и не изменяется</span>
+                </div>
+                <h3 className="font-display text-2xl font-black text-white flex items-center gap-2">
+                  <Crown className="text-amber-400" /> Архив Зала Славы — Сезон 1
                 </h3>
-                <p className="text-xs text-zinc-400">Топ игроков NODBET — выберите категорию для просмотра.</p>
+                <p className="text-xs text-zinc-400">Исторический слепок легенд первого сезона. Все украшения и привилегии сохранены в первозданном виде.</p>
+              </div>
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  placeholder="Поиск по нику в архиве..."
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs text-white placeholder-zinc-500 focus:border-amber-500 focus:outline-none"
+                />
               </div>
             </div>
 
@@ -1286,10 +1327,10 @@ export default function NodbetPage() {
               ].map((cat) => (
                 <button
                   key={cat.key}
-                  onClick={() => setLeaderboardCategory(cat.key)}
+                  onClick={() => setArchiveCategory(cat.key)}
                   className={`rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    leaderboardCategory === cat.key
-                      ? "bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-yellow-500/20"
+                    archiveCategory === cat.key
+                      ? "bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-lg shadow-amber-500/20"
                       : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white border border-white/10"
                   }`}
                 >
@@ -1298,12 +1339,16 @@ export default function NodbetPage() {
               ))}
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141414]">
+            <div className="overflow-hidden rounded-2xl border border-amber-500/20 bg-[#141414]">
+              <div className="bg-amber-500/10 px-5 py-2.5 border-b border-amber-500/20 flex items-center justify-between text-xs text-amber-300">
+                <span className="font-bold">🔒 Замороженный архивный список (1 Сезон)</span>
+                <span>Все украшения и статусы участников сохранены</span>
+              </div>
               <table className="w-full text-left text-sm">
                 <thead className="bg-white/5 text-xs uppercase tracking-wider text-zinc-400">
                   <tr>
                     <th className="px-5 py-4">#</th>
-                    <th className="px-5 py-4">Беттор / Игрок</th>
+                    <th className="px-5 py-4">Легенда Сезона 1</th>
                     <th className="px-5 py-4 text-center">Уровень</th>
                     <th className="px-5 py-4 text-center">Ставок</th>
                     <th className="px-5 py-4 text-center">Всего выиграно</th>
@@ -1311,7 +1356,226 @@ export default function NodbetPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {sortedHighRollers.map((hr, idx) => {
+                  {sortedArchiveHighRollers.map((hr, idx) => {
+                    const auraColorDef = hr.auraOwned && hr.auraEnabled && hr.auraColor
+                      ? AURA_COLORS.find((c) => c.id === hr.auraColor)
+                      : null;
+
+                    return (
+                      <tr
+                        key={hr.id}
+                        className={`transition-colors ${
+                          hr.hallFrame ? "bg-amber-500/[0.06]" : idx < 3 ? "bg-yellow-500/[0.04]" : ""
+                        }`}
+                      >
+                        <td className="px-5 py-4 font-display text-lg font-bold text-zinc-400">
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              {auraColorDef ? (
+                                <span
+                                  className="aura-nickname relative inline-flex items-center gap-2.5"
+                                  style={{
+                                    ["--aura-color" as any]: auraColorDef.color,
+                                    ["--aura-glow" as any]: auraColorDef.glow,
+                                  }}
+                                >
+                                  {hr.crownBadge && (
+                                    <span className="text-base relative z-10" title="👑 Корона Хайроллера">
+                                      👑
+                                    </span>
+                                  )}
+                                  <span className={`relative z-10 font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""}`}>
+                                    {hr.nickname}
+                                  </span>
+                                  {hr.starTrail && (
+                                    <span className="star-trail-container absolute inset-0 pointer-events-none">
+                                      <span className="star-particle" style={{ top: "10%", left: "5%", animationDelay: "0s" }}>✦</span>
+                                      <span className="star-particle" style={{ top: "60%", left: "90%", animationDelay: "0.5s" }}>✧</span>
+                                      <span className="star-particle" style={{ top: "20%", left: "70%", animationDelay: "1s" }}>✦</span>
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <>
+                                  {hr.crownBadge && (
+                                    <span className="text-base" title="👑 Корона Хайроллера">
+                                      👑
+                                    </span>
+                                  )}
+                                  <span className={`font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""}`}>
+                                    {hr.nickname}
+                                  </span>
+                                  {hr.starTrail && (
+                                    <span className="star-trail-container relative inline-block ml-1 pointer-events-none">
+                                      <span className="star-particle" style={{ top: "-30%", left: "0%", animationDelay: "0s" }}>✦</span>
+                                      <span className="star-particle" style={{ top: "20%", left: "60%", animationDelay: "0.5s" }}>✧</span>
+                                    </span>
+                                  )}
+                                </>
+                              )}
+
+                              {hr.customStatus && (
+                                <span className="rounded-full border border-amber-500/50 bg-amber-500/20 px-2.5 py-0.5 text-[11px] font-bold text-amber-300">
+                                  {hr.customStatus}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-center">
+                          <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs font-bold bg-white/5 text-amber-300">
+                            <Crown size={11} /> {hr.level}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-center font-mono text-zinc-300">
+                          {hr.betsCount}
+                        </td>
+                        <td className="px-5 py-4 text-center font-mono text-zinc-300">
+                          {hr.totalWon.toLocaleString()} NOD
+                        </td>
+                        <td className="px-5 py-4 text-right font-mono text-base font-bold text-amber-400">
+                          {hr.balance.toLocaleString()} <span className="text-xs text-zinc-400">NOD</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ======================= TAB 5: LEADERBOARD (SEASON 2) ======================= */}
+        {activeTab === "leaderboard" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* SEASON 2 BANNER */}
+            <div className="relative overflow-hidden rounded-3xl border border-red-500/30 bg-gradient-to-r from-red-950/60 via-[#1a1414] to-yellow-950/40 p-6 sm:p-8 shadow-2xl">
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-red-600 via-yellow-400 to-red-600" />
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-red-500/20 px-3 py-1 text-xs font-black uppercase tracking-wider text-red-400 border border-red-500/40 animate-pulse">
+                      ✨ Сезон 2 • Активная Эра
+                    </span>
+                    <span className="rounded-full bg-yellow-500/20 px-3 py-1 text-xs font-bold text-yellow-300 border border-yellow-500/30">
+                      🚀 С чистого листа
+                    </span>
+                  </div>
+                  <h3 className="font-display text-3xl font-black italic tracking-wide text-white drop-shadow-md">
+                    ЗАЛ СЛАВЫ <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-red-500">СЕЗОНА 2</span>
+                  </h3>
+                  <p className="text-sm text-zinc-300 max-w-xl">
+                    Добро пожаловать в новый сезон NODBET! Прогресс всех игроков был успешно обнулён. Начальный баланс каждого участника — <span className="text-yellow-400 font-bold">10 000 NOD</span>. Сделайте первые ставки, крутите рулетку и займите первое место на пьедестале!
+                  </p>
+                </div>
+                <div className="flex items-center gap-4 bg-black/40 p-4 rounded-2xl border border-white/10 backdrop-blur-md">
+                  <div className="text-center px-3 border-r border-white/10">
+                    <span className="text-xs text-zinc-400 block uppercase">Статус эры</span>
+                    <span className="font-display text-lg font-black text-green-400">АКТИВНА</span>
+                  </div>
+                  <div className="text-center px-3">
+                    <span className="text-xs text-zinc-400 block uppercase">Ваш баланс</span>
+                    <span className="font-mono text-lg font-black text-yellow-400">{balance.toLocaleString()} NOD</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* TOP 3 PODIUM SHOWCASE */}
+            {sortedSeason2HighRollers.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                {/* 2nd Place */}
+                {sortedSeason2HighRollers[1] && (
+                  <div className="rounded-2xl border border-zinc-400/30 bg-gradient-to-b from-zinc-800/40 to-[#141414] p-5 relative overflow-hidden flex flex-col items-center text-center shadow-xl md:translate-y-4">
+                    <div className="absolute top-0 right-0 bg-zinc-500 text-black font-black text-xs px-3 py-1 rounded-bl-xl">🥈 2 МЕСТО</div>
+                    <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-zinc-400 to-zinc-600 flex items-center justify-center text-2xl font-black text-black shadow-lg mb-3">
+                      🥈
+                    </div>
+                    <h4 className="font-display text-lg font-bold text-white">{sortedSeason2HighRollers[1].nickname}</h4>
+                    <span className="font-mono text-sm font-black text-yellow-400 mt-1">{sortedSeason2HighRollers[1].balance.toLocaleString()} NOD</span>
+                    <span className="text-xs text-zinc-400 mt-2">Уровень {sortedSeason2HighRollers[1].level} • {sortedSeason2HighRollers[1].betsCount} ставок</span>
+                  </div>
+                )}
+
+                {/* 1st Place */}
+                {sortedSeason2HighRollers[0] && (
+                  <div className="rounded-2xl border border-yellow-500/50 bg-gradient-to-b from-yellow-500/20 via-[#181410] to-[#141414] p-6 relative overflow-hidden flex flex-col items-center text-center shadow-2xl ring-2 ring-yellow-400/30">
+                    <div className="absolute top-0 right-0 bg-gradient-to-r from-yellow-500 to-amber-600 text-black font-black text-xs px-4 py-1 rounded-bl-xl shadow-md">👑 1 МЕСТО</div>
+                    <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-600 flex items-center justify-center text-3xl font-black text-black shadow-xl mb-3 animate-bounce">
+                      👑
+                    </div>
+                    <h4 className="font-display text-xl font-black text-yellow-300">{sortedSeason2HighRollers[0].nickname}</h4>
+                    <span className="font-mono text-lg font-black text-yellow-400 mt-1">{sortedSeason2HighRollers[0].balance.toLocaleString()} NOD</span>
+                    <span className="text-xs text-zinc-300 mt-2">Уровень {sortedSeason2HighRollers[0].level} • {sortedSeason2HighRollers[0].betsCount} ставок</span>
+                  </div>
+                )}
+
+                {/* 3rd Place */}
+                {sortedSeason2HighRollers[2] && (
+                  <div className="rounded-2xl border border-amber-600/30 bg-gradient-to-b from-amber-950/30 to-[#141414] p-5 relative overflow-hidden flex flex-col items-center text-center shadow-xl md:translate-y-4">
+                    <div className="absolute top-0 right-0 bg-amber-700 text-white font-black text-xs px-3 py-1 rounded-bl-xl">🥉 3 МЕСТО</div>
+                    <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-800 flex items-center justify-center text-2xl font-black text-white shadow-lg mb-3">
+                      🥉
+                    </div>
+                    <h4 className="font-display text-lg font-bold text-white">{sortedSeason2HighRollers[2].nickname}</h4>
+                    <span className="font-mono text-sm font-black text-yellow-400 mt-1">{sortedSeason2HighRollers[2].balance.toLocaleString()} NOD</span>
+                    <span className="text-xs text-zinc-400 mt-2">Уровень {sortedSeason2HighRollers[2].level} • {sortedSeason2HighRollers[2].betsCount} ставок</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              {/* CATEGORY TABS */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "balance" as const, label: "💰 Баланс NOD", desc: "Топ по балансу монет" },
+                  { key: "totalWon" as const, label: "🏆 Всего выиграно", desc: "Топ по общему выигрышу" },
+                  { key: "betsCount" as const, label: "📊 Ставок", desc: "Топ по количеству ставок" },
+                  { key: "level" as const, label: "⭐ Уровень", desc: "Топ по уровню XP" },
+                ].map((cat) => (
+                  <button
+                    key={cat.key}
+                    onClick={() => setLeaderboardCategory(cat.key)}
+                    className={`rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      leaderboardCategory === cat.key
+                        ? "bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg shadow-yellow-500/25"
+                        : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white border border-white/10"
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  placeholder="Поиск игрока в Сезоне 2..."
+                  value={season2Search}
+                  onChange={(e) => setSeason2Search(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs text-white placeholder-zinc-500 focus:border-yellow-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141414] shadow-xl">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-white/5 text-xs uppercase tracking-wider text-zinc-400">
+                  <tr>
+                    <th className="px-5 py-4">#</th>
+                    <th className="px-5 py-4">Беттор / Игрок (Сезон 2)</th>
+                    <th className="px-5 py-4 text-center">Уровень</th>
+                    <th className="px-5 py-4 text-center">Ставок</th>
+                    <th className="px-5 py-4 text-center">Всего выиграно</th>
+                    <th className="px-5 py-4 text-right">Баланс NOD</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {sortedSeason2HighRollers.map((hr, idx) => {
                     const auraColorDef = hr.auraOwned && hr.auraEnabled && hr.auraColor
                       ? AURA_COLORS.find((c) => c.id === hr.auraColor)
                       : null;
@@ -1329,7 +1593,6 @@ export default function NodbetPage() {
                         <td className="px-5 py-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2.5 flex-wrap">
-                              {/* AURA WRAPPER — above Hall Frame, wraps the nickname */}
                               {auraColorDef ? (
                                 <span
                                   className="aura-nickname relative inline-flex items-center gap-2.5"
@@ -1346,14 +1609,11 @@ export default function NodbetPage() {
                                   <span className={`relative z-10 font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""} ${hr.isCurrentUser ? "text-yellow-400" : ""}`}>
                                     {hr.nickname}
                                   </span>
-                                  {/* Star trail particles */}
                                   {hr.starTrail && (
                                     <span className="star-trail-container absolute inset-0 pointer-events-none">
                                       <span className="star-particle" style={{ top: "10%", left: "5%", animationDelay: "0s" }}>✦</span>
                                       <span className="star-particle" style={{ top: "60%", left: "90%", animationDelay: "0.5s" }}>✧</span>
                                       <span className="star-particle" style={{ top: "20%", left: "70%", animationDelay: "1s" }}>✦</span>
-                                      <span className="star-particle" style={{ top: "80%", left: "30%", animationDelay: "1.5s" }}>✧</span>
-                                      <span className="star-particle" style={{ top: "40%", left: "50%", animationDelay: "0.3s" }}>⭑</span>
                                     </span>
                                   )}
                                 </span>
@@ -1367,12 +1627,10 @@ export default function NodbetPage() {
                                   <span className={`font-bold ${hr.hallFrame ? "text-amber-300 px-2 py-0.5 rounded-md ring-1 ring-amber-400/60 bg-amber-500/10" : "text-white"} ${hr.crownBadge ? "text-yellow-300 drop-shadow-[0_0_6px_rgba(234,179,8,0.6)] font-black" : ""} ${hr.isCurrentUser ? "text-yellow-400" : ""}`}>
                                     {hr.nickname}
                                   </span>
-                                  {/* Star trail without aura */}
                                   {hr.starTrail && (
                                     <span className="star-trail-container relative inline-block ml-1 pointer-events-none">
                                       <span className="star-particle" style={{ top: "-30%", left: "0%", animationDelay: "0s" }}>✦</span>
                                       <span className="star-particle" style={{ top: "20%", left: "60%", animationDelay: "0.5s" }}>✧</span>
-                                      <span className="star-particle" style={{ top: "-20%", left: "40%", animationDelay: "1s" }}>⭑</span>
                                     </span>
                                   )}
                                 </>
@@ -1385,7 +1643,6 @@ export default function NodbetPage() {
                                 </span>
                               )}
                             </div>
-                            {/* NEON SIGNATURE — below the nickname row */}
                           </div>
                         </td>
                         <td className="px-5 py-4 text-center">

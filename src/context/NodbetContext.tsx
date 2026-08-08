@@ -273,7 +273,7 @@ export interface NodbetContextValue {
   refreshOwnProfile: () => Promise<void>;
 }
 
-const LOCAL_STORAGE_PREFIX = "njdc_nodbet_state_v3_";
+const LOCAL_STORAGE_PREFIX = "njdc_nodbet_state_season2_v1_";
 const LOCAL_NICKNAMES_KEY = "njdc_nodbet_nicknames_v1";
 const GUEST_ID = "guest_high_roller";
 const STARTING_BALANCE = 10000;
