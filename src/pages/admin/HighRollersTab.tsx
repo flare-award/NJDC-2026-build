@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Search, Save, X } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabaseClient";
-import { inputClass, btnPrimary, btnGhost } from "./adminStyles";
+import { inputClass, btnGhost } from "./adminStyles";
 import { fruitNickname } from "../../utils/nickname";
 
 interface Profile {
